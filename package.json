@@ -1,25 +1,63 @@
 {
   "name": "MyDearPartner",
-  "version": "0.0.1",
+  "version": "0.3.1",
   "private": true,
   "scripts": {
     "android": "react-native run-android",
     "ios": "react-native run-ios",
     "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
     "start": "react-native start",
-    "test": "jest"
+    "dev": "react-native start",
+    "test": "jest",
+    "check": "npm run typecheck && npm run lint && npm test -- --runInBand && npm run security:tools",
+    "postinstall": "patch-package --error-on-fail",
+    "release": "node scripts/bump-version.js",
+    "security:tools": "node scripts/check-security-tools.cjs"
   },
   "dependencies": {
+    "@notifee/react-native": "^9.1.8",
+    "@react-native-async-storage/async-storage": "^3.1.1",
+    "@react-native-community/blur": "^4.4.1",
+    "@react-native-firebase/app": "^26.3.3",
+    "@react-native-firebase/crashlytics": "^26.3.3",
+    "@react-native-firebase/messaging": "^26.3.3",
+    "@react-navigation/bottom-tabs": "^7.18.17",
+    "@react-navigation/native": "^7.3.17",
+    "@react-navigation/native-stack": "^7.18.9",
+    "@tanstack/react-query": "^5.104.1",
+    "@types/react-native-vector-icons": "^6.4.18",
+    "crypto-js": "^4.2.0",
+    "lucide-react-native": "^1.51.0",
     "react": "19.2.3",
     "react-native": "0.87.0",
-    "@react-native/new-app-screen": "0.87.0",
-    "react-native-safe-area-context": "^5.5.2"
+    "react-native-base64": "^0.2.2",
+    "react-native-bootsplash": "^7.3.4",
+    "react-native-fast-image": "^8.29.0",
+    "react-native-gesture-handler": "^3.3.0",
+    "react-native-get-random-values": "^2.0.0",
+    "react-native-image-picker": "^8.2.1",
+    "react-native-keyboard-aware-scroll-view": "^0.9.5",
+    "react-native-keychain": "^10.0.0",
+    "react-native-linear-gradient": "^2.8.3",
+    "react-native-nitro-modules": "^0.37.1",
+    "react-native-quick-base64": "^3.0.1",
+    "react-native-quick-crypto": "^1.1.7",
+    "react-native-razorpay": "^3.0.0",
+    "react-native-reanimated": "^4.7.1",
+    "react-native-safe-area-context": "^5.5.2",
+    "react-native-screens": "^4.27.0",
+    "react-native-svg": "^15.15.5",
+    "react-native-vector-icons": "^10.3.0",
+    "react-native-video": "^6.19.2",
+    "react-native-webview": "^14.0.1",
+    "react-native-worklets": "^0.13.0"
   },
   "devDependencies": {
     "@babel/core": "^7.25.2",
     "@babel/preset-env": "^7.25.3",
     "@babel/runtime": "^7.25.0",
-    "@react-native-community/cli": "20.2.0",
+    "@react-native-community/cli": "^20.2.0",
     "@react-native-community/cli-platform-android": "20.2.0",
     "@react-native-community/cli-platform-ios": "20.2.0",
     "@react-native/babel-preset": "0.87.0",
@@ -27,16 +65,31 @@
     "@react-native/jest-preset": "0.87.0",
     "@react-native/metro-config": "0.87.0",
     "@react-native/typescript-config": "0.87.0",
+    "@types/crypto-js": "^4.2.2",
     "@types/jest": "^29.5.13",
     "@types/react": "^19.2.0",
     "@types/react-test-renderer": "^19.1.0",
+    "babel-plugin-transform-remove-console": "^6.9.4",
     "eslint": "^8.19.0",
     "jest": "^29.6.3",
+    "patch-package": "^8.0.1",
     "prettier": "2.8.8",
     "react-test-renderer": "19.2.3",
-    "typescript": "^6.0.3"
+    "typescript": "^6.0.3",
+    "@types/node": "26.2.0"
   },
   "engines": {
     "node": ">= 22.11.0"
+  },
+  "overrides": {
+    "compression": "^1.8.2",
+    "@grpc/grpc-js": "^1.14.5",
+    "uuid": "^11.1.1",
+    "metro": {
+      "image-size": "^2.0.4"
+    },
+    "@istanbuljs/load-nyc-config": {
+      "js-yaml": "^4.1.1"
+    }
   }
 }

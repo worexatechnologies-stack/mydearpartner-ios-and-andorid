@@ -1,0 +1,506 @@
+diff --git a/backend/config/settings/base.py b/backend/config/settings/base.py
+index cf6190b..9ab3ef9 100644
+--- a/backend/config/settings/base.py
++++ b/backend/config/settings/base.py
+@@ -94,6 +94,7 @@ INSTALLED_APPS = [
+     'apps.messaging',
+     'apps.memberships',
+     'apps.notifications',
++    'safety.apps.SafetyConfig',
+ ]
+ 
+ MIDDLEWARE = [
+diff --git a/backend/config/urls.py b/backend/config/urls.py
+index 8679f52..11f1711 100644
+--- a/backend/config/urls.py
++++ b/backend/config/urls.py
+@@ -49,6 +49,9 @@ urlpatterns = [
+     # bytes from PostgreSQL BYTEA columns.
+     path('api/', include(('apps.profiles.urls', 'profiles'), namespace='profiles-api')),
+     
++    # Adult eligibility and policy acceptance for mobile clients
++    path('api/v1/', include('safety.urls')),
++
+     # API Endpoints version 1
+     path('api/v1/', include(('apps.profiles.urls', 'profiles'), namespace='profiles-v1')),
+     path('api/v1/auth/', include(('apps.accounts.urls', 'accounts'), namespace='auth-v1')),
+--- /dev/null
++++ b/backend/safety/.gitignore
+@@ -0,0 +1,2 @@
++__pycache__/
++*.py[cod]
+diff --git a/backend/safety/__init__.py b/backend/safety/__init__.py
+new file mode 100644
+index 0000000..e69de29
+--- /dev/null
++++ b/backend/safety/admin.py
+@@ -0,0 +1,39 @@
++from django import forms
++from django.contrib import admin
++from .models import Eligibility, SafetyRequest
++
++
++class RequestForm(forms.ModelForm):
++    class Meta:
++        model = SafetyRequest
++        fields = '__all__'
++
++    def clean(self):
++        data = super().clean()
++        if data.get('status') == 'completed':
++            if not data.get('resolution', '').strip():
++                raise forms.ValidationError('Record the action taken, retained data and user notification before completing a request.')
++            if self.instance.kind == 'deletion' and not data.get('ownership_verified'):
++                raise forms.ValidationError('Verify account ownership before completing deletion.')
++        return data
++
++
++@admin.register(SafetyRequest)
++class RequestAdmin(admin.ModelAdmin):
++    form = RequestForm
++    list_display = ['id', 'kind', 'urgent', 'status', 'created_at', 'updated_at']
++    list_filter = ['kind', 'status', 'urgent']
++    search_fields = ['id', 'email', 'profile_id']
++    readonly_fields = ['id', 'kind', 'user', 'email', 'profile_id', 'chat_id', 'message_id', 'reason', 'details', 'created_at', 'updated_at']
++
++    def has_add_permission(self, request):
++        return False
++
++
++@admin.register(Eligibility)
++class EligibilityAdmin(admin.ModelAdmin):
++    list_display = ['user', 'policy_version', 'accepted_at']
++    readonly_fields = ['user', 'date_of_birth', 'policy_version', 'accepted_at']
++
++    def has_add_permission(self, request):
++        return False
+--- /dev/null
++++ b/backend/safety/apps.py
+@@ -0,0 +1,6 @@
++from django.apps import AppConfig
++
++
++class SafetyConfig(AppConfig):
++    default_auto_field = 'django.db.models.BigAutoField'
++    name = 'safety'
+--- /dev/null
++++ b/backend/safety/legal.json
+@@ -0,0 +1,78 @@
++{
++  "version": "2026-09-28",
++  "privacy": {
++    "title": "Privacy Policy",
++    "sections": [
++      {
++        "heading": "My Dear Partner",
++        "body": "My Dear Partner provides adult matchmaking and messaging. Contact support@mydearpartner.in for privacy questions, access or correction requests, account deletion, or safety concerns."
++      },
++      {
++        "heading": "Information used by the service",
++        "body": "We process account identifiers and credentials; profile information you provide, including age, location, religion, occupation and preferences; uploaded profile photos; interests and messages; notification preferences and device push tokens; membership and payment records; and reports you submit. Optional verification uploads include identity or income documents and selfies. Provide only information needed for the feature you choose."
++      },
++      {
++        "heading": "Purpose and visibility",
++        "body": "We use this information to operate accounts, show profiles and matches, deliver messages and notifications, process memberships, review verification submissions, prevent abuse and respond to requests. Profile information and photos are visible to other members according to the available privacy settings. Messages are delivered to their recipients. A report shares the details you enter with the safety team; avoid unrelated personal information."
++      },
++      {
++        "heading": "Service providers",
++        "body": "Our hosting services process app data. Firebase Cloud Messaging delivers push notifications. Razorpay processes payments when that checkout is available. Payment providers receive the information needed to process a transaction under their own privacy policies. Information may also be disclosed where legally required. We do not sell personal data."
++      },
++      {
++        "heading": "Permissions and choices",
++        "body": "You choose individual photos or documents using the system picker. Camera access is used when you choose to take a verification selfie. Notification permission is optional. You can change profile visibility and notification preferences in Settings. Verification documents are intended for review, not for display on your public profile."
++      },
++      {
++        "heading": "Retention and deletion",
++        "body": "Account information is kept while needed to provide your account. You can request deletion of your account and associated profile, photos, verification uploads, messaging data and device tokens from Account deletion in the app or the public account-deletion page. Requests are reviewed to confirm ownership and identify the data held. Limited payment, fraud-prevention, safety or legally required records may need to be retained; the support team will explain any applicable retention and the expected completion time. Deactivation alone is not deletion. Copies already received or saved by other users may remain with them."
++      },
++      {
++        "heading": "Security and children",
++        "body": "The app communicates with our service over encrypted connections and stores login tokens in device secure storage. No system can guarantee absolute security. This service is for adults aged 18 or older. Report suspected underage accounts through the in-app reporting feature."
++      }
++    ]
++  },
++  "terms": {
++    "title": "Terms of Service",
++    "sections": [
++      {
++        "heading": "Eligibility and consent",
++        "body": "You must be at least 18 years old and provide accurate information to use My Dear Partner. By accepting these terms you also acknowledge the Privacy Policy and Community & Child Safety Standards. Do not impersonate another person or misrepresent your age or identity."
++      },
++      {
++        "heading": "Content and conduct",
++        "body": "Only upload content you have the right and consent to share. Harassment, threats, scams, trafficking, sexual exploitation, child sexual abuse material, non-consensual intimate imagery, unlawful deepfakes and other illegal content are prohibited. Do not generate, alter, upload or distribute synthetic content that is unlawful, sexually exploitative, or deceptively impersonates someone. Do not solicit money through deceptive relationships."
++      },
++      {
++        "heading": "Safety and enforcement",
++        "body": "Report objectionable profiles, photos or messages using Report in the app. You can also block a member. Reports may lead to content removal, account restriction or termination, and referral to the appropriate authorities where required. Report information is reviewed by the safety team. Never upload or forward suspected child sexual abuse imagery as evidence; report the account or message instead."
++      },
++      {
++        "heading": "Memberships and support",
++        "body": "Any purchase must show its price, duration and available benefits before payment. Contact support@mydearpartner.in for membership, refund, grievance or account assistance. Deleting the app does not delete your account or automatically cancel an independently recurring payment arrangement. Account deletion can be requested separately."
++      }
++    ]
++  },
++  "safety": {
++    "title": "Community & Child Safety Standards",
++    "sections": [
++      {
++        "heading": "Adults only",
++        "body": "My Dear Partner is for people aged 18 and over. Underage accounts are not permitted. Report a suspected underage member using Report profile or Report conversation."
++      },
++      {
++        "heading": "Zero tolerance for exploitation",
++        "body": "Child sexual abuse and exploitation (CSAE) and child sexual abuse material (CSAM) are prohibited, including grooming, sextortion, trafficking and sexualized synthetic depictions of minors. Non-consensual intimate imagery, unlawful deepfakes, impersonation, harassment and scams are also prohibited."
++      },
++      {
++        "heading": "Report and block",
++        "body": "Open a member's profile or conversation menu and choose Report. You can report an individual incoming message using its Report message control. Select the relevant reason and describe the concern. Do not attach or reproduce illegal imagery. Blocking is available separately and does not submit a report."
++      },
++      {
++        "heading": "Response and contact",
++        "body": "The safety team reviews reports and may restrict accounts or remove content. Confirmed child sexual abuse material must be removed and reported to the appropriate regional or national authority as required by law. For urgent safety concerns or grievances, contact support@mydearpartner.in and identify My Dear Partner and the relevant account or report reference. If someone is in immediate danger, contact local emergency services."
++      }
++    ]
++  }
++}
+--- /dev/null
++++ b/backend/safety/migrations/0001_initial.py
+@@ -0,0 +1,52 @@
++# Generated by Django 4.2.16 on 2026-09-28 07:19
++
++from django.conf import settings
++from django.db import migrations, models
++import django.db.models.deletion
++import uuid
++
++
++class Migration(migrations.Migration):
++
++    initial = True
++
++    dependencies = [
++        migrations.swappable_dependency(settings.AUTH_USER_MODEL),
++    ]
++
++    operations = [
++        migrations.CreateModel(
++            name='Eligibility',
++            fields=[
++                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
++                ('date_of_birth', models.DateField()),
++                ('policy_version', models.CharField(max_length=32)),
++                ('accepted_at', models.DateTimeField()),
++                ('user', models.OneToOneField(on_delete=django.db.models.deletion.CASCADE, to=settings.AUTH_USER_MODEL)),
++            ],
++        ),
++        migrations.CreateModel(
++            name='SafetyRequest',
++            fields=[
++                ('id', models.UUIDField(default=uuid.uuid4, editable=False, primary_key=True, serialize=False)),
++                ('kind', models.CharField(choices=[('report', 'Safety report'), ('deletion', 'Account deletion')], max_length=12)),
++                ('email', models.EmailField(blank=True, max_length=254)),
++                ('profile_id', models.CharField(blank=True, max_length=128)),
++                ('chat_id', models.CharField(blank=True, max_length=128)),
++                ('message_id', models.CharField(blank=True, max_length=128)),
++                ('reason', models.CharField(blank=True, max_length=80)),
++                ('details', models.TextField(blank=True)),
++                ('status', models.CharField(choices=[('received', 'Received'), ('reviewing', 'Reviewing'), ('completed', 'Completed')], default='received', max_length=12)),
++                ('urgent', models.BooleanField(default=False)),
++                ('ownership_verified', models.BooleanField(default=False)),
++                ('resolution', models.TextField(blank=True)),
++                ('created_at', models.DateTimeField(auto_now_add=True)),
++                ('updated_at', models.DateTimeField(auto_now=True)),
++                ('user', models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.SET_NULL, to=settings.AUTH_USER_MODEL)),
++            ],
++            options={
++                'ordering': ['-urgent', 'created_at'],
++                'indexes': [models.Index(fields=['status', 'kind'], name='safety_status_kind')],
++            },
++        ),
++    ]
+diff --git a/backend/safety/migrations/__init__.py b/backend/safety/migrations/__init__.py
+new file mode 100644
+index 0000000..e69de29
+--- /dev/null
++++ b/backend/safety/models.py
+@@ -0,0 +1,42 @@
++import uuid
++from django.conf import settings
++from django.db import models
++
++
++class Eligibility(models.Model):
++    user = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
++    date_of_birth = models.DateField()
++    policy_version = models.CharField(max_length=32)
++    accepted_at = models.DateTimeField()
++
++
++class SafetyRequest(models.Model):
++    class Kind(models.TextChoices):
++        REPORT = 'report', 'Safety report'
++        DELETION = 'deletion', 'Account deletion'
++
++    class Status(models.TextChoices):
++        RECEIVED = 'received', 'Received'
++        REVIEWING = 'reviewing', 'Reviewing'
++        COMPLETED = 'completed', 'Completed'
++
++    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
++    kind = models.CharField(max_length=12, choices=Kind.choices)
++    user = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL)
++    email = models.EmailField(blank=True)
++    # Identifiers are opaque: the production profile/chat service resolves them.
++    profile_id = models.CharField(max_length=128, blank=True)
++    chat_id = models.CharField(max_length=128, blank=True)
++    message_id = models.CharField(max_length=128, blank=True)
++    reason = models.CharField(max_length=80, blank=True)
++    details = models.TextField(blank=True)
++    status = models.CharField(max_length=12, choices=Status.choices, default=Status.RECEIVED)
++    urgent = models.BooleanField(default=False)
++    ownership_verified = models.BooleanField(default=False)
++    resolution = models.TextField(blank=True)
++    created_at = models.DateTimeField(auto_now_add=True)
++    updated_at = models.DateTimeField(auto_now=True)
++
++    class Meta:
++        ordering = ['-urgent', 'created_at']
++        indexes = [models.Index(fields=['status', 'kind'], name='safety_status_kind')]
+--- /dev/null
++++ b/backend/safety/permissions.py
+@@ -0,0 +1,34 @@
++from datetime import timedelta
++from django.utils import timezone
++from rest_framework.permissions import BasePermission, IsAuthenticated
++from django.contrib.auth import get_user_model
++from .models import Eligibility
++from .policies import POLICY_VERSION
++
++
++def is_adult(birth, today=None):
++    today = today or timezone.localdate()
++    age = today.year - birth.year - ((today.month, today.day) < (birth.month, birth.day))
++    return 18 <= age <= 120
++
++
++def is_eligible(user):
++    if not user or not user.is_authenticated:
++        return False
++    record = Eligibility.objects.filter(user=user).first()
++    return bool(record and is_adult(record.date_of_birth)
++                and record.policy_version == POLICY_VERSION
++                and record.accepted_at > timezone.now() - timedelta(days=90))
++
++
++class AdultMember(BasePermission):
++    message = 'Confirm adult eligibility and accept the current policies before continuing.'
++
++    def has_permission(self, request, view):
++        return is_eligible(request.user)
++
++
++class AuthenticatedMember(IsAuthenticated):
++    """Safety records belong to members, not separate back-office accounts."""
++    def has_permission(self, request, view):
++        return super().has_permission(request, view) and isinstance(request.user, get_user_model())
+--- /dev/null
++++ b/backend/safety/policies.py
+@@ -0,0 +1,5 @@
++import json
++from pathlib import Path
++
++DOCUMENTS = json.loads((Path(__file__).parent / 'legal.json').read_text())
++POLICY_VERSION = DOCUMENTS['version']
+--- /dev/null
++++ b/backend/safety/serializers.py
+@@ -0,0 +1,52 @@
++from rest_framework import serializers
++from .permissions import is_adult
++from .policies import POLICY_VERSION
++
++REASONS = [
++    'Underage user', 'Child exploitation or abuse', 'Non-consensual intimate content',
++    'Deepfake or impersonation', 'Harassment or threats', 'Scam or fraud',
++    'Sexual or other prohibited content', 'Other safety concern',
++]
++
++
++class EligibilitySerializer(serializers.Serializer):
++    date_of_birth = serializers.DateField()
++    policy_version = serializers.CharField(max_length=32)
++    accepted = serializers.BooleanField()
++
++    def validate_date_of_birth(self, value):
++        if not is_adult(value):
++            raise serializers.ValidationError('You must be at least 18 years old.')
++        return value
++
++    def validate_policy_version(self, value):
++        if value != POLICY_VERSION:
++            raise serializers.ValidationError('Read and accept the current policies.')
++        return value
++
++    def validate_accepted(self, value):
++        if not value:
++            raise serializers.ValidationError('Acceptance is required.')
++        return value
++
++
++class ReportSerializer(serializers.Serializer):
++    profile_id = serializers.CharField(max_length=128)
++    chat_id = serializers.CharField(max_length=128, required=False, allow_blank=True)
++    message_id = serializers.CharField(max_length=128, required=False, allow_blank=True)
++    reason = serializers.ChoiceField(choices=REASONS)
++    details = serializers.CharField(max_length=2000, required=False, allow_blank=True)
++
++    def validate(self, data):
++        if data.get('message_id') and not data.get('chat_id'):
++            raise serializers.ValidationError('A message report must identify its conversation.')
++        return data
++
++
++class DeletionSerializer(serializers.Serializer):
++    confirm = serializers.BooleanField()
++
++    def validate_confirm(self, value):
++        if not value:
++            raise serializers.ValidationError('Confirm that you want account deletion.')
++        return value
+--- /dev/null
++++ b/backend/safety/templates/safety/deletion.html
+@@ -0,0 +1,9 @@
++<!doctype html>
++<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Delete your My Dear Partner account</title></head>
++<body><main><h1>Delete your My Dear Partner account and associated data</h1>
++<p>You can request deletion here without installing or signing into the app. We will verify account ownership before taking action. Submitting a request does not immediately delete an account.</p>
++<p>Deletion covers your profile, photos, verification uploads, messages and device tokens. Limited payment, legal or safety records may need to be retained. Support will explain applicable exceptions and expected completion time. Copies held by other users may remain. A separately recurring payment arrangement may need to be cancelled with its provider.</p>
++{% if submitted %}<p>Your request has been received. Support will contact you to verify ownership and confirm next steps.</p>
++{% else %}<form method="post">{% csrf_token %}{{ form.as_p }}<button type="submit">Request account and data deletion</button></form>{% endif %}
++<p>Contact: <a href="mailto:support@mydearpartner.in">support@mydearpartner.in</a></p><a href="/policies/privacy/">Privacy Policy</a>
++</main></body></html>
+--- /dev/null
++++ b/backend/safety/templates/safety/policy.html
+@@ -0,0 +1,6 @@
++<!doctype html>
++<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{{ policy.title }} | My Dear Partner</title></head>
++<body><main><h1>{{ policy.title }}</h1><p>My Dear Partner · Version {{ version }}</p>
++{% for section in policy.sections %}<h2>{{ section.heading }}</h2><p>{{ section.body }}</p>{% endfor %}
++<nav><a href="/policies/privacy/">Privacy Policy</a> · <a href="/policies/terms/">Terms</a> · <a href="/policies/safety/">Child Safety Standards</a> · <a href="/account-deletion/">Request account deletion</a></nav>
++</main></body></html>
+--- /dev/null
++++ b/backend/safety/urls.py
+@@ -0,0 +1,8 @@
++from django.urls import path
++from . import views
++
++urlpatterns = [
++    path('safety/eligibility/', views.eligibility),
++    path('safety/reports/', views.report),
++    path('safety/account-deletion/', views.account_deletion),
++]
+--- /dev/null
++++ b/backend/safety/views.py
+@@ -0,0 +1,102 @@
++from django import forms
++from django.db import transaction
++from django.shortcuts import render
++from django.http import Http404
++from django.utils import timezone
++from django.views.decorators.http import require_http_methods
++from django.core.cache import cache
++from rest_framework.decorators import api_view, permission_classes, throttle_classes
++from rest_framework.response import Response
++from rest_framework.throttling import UserRateThrottle
++from .models import Eligibility, SafetyRequest
++from .permissions import is_eligible, AuthenticatedMember
++from .policies import DOCUMENTS, POLICY_VERSION
++from .serializers import EligibilitySerializer, ReportSerializer, DeletionSerializer
++
++
++class SafetyThrottle(UserRateThrottle):
++    rate = '30/hour'
++
++
++@api_view(['GET', 'POST'])
++@permission_classes([AuthenticatedMember])
++@throttle_classes([SafetyThrottle])
++def eligibility(request):
++    if request.method == 'POST':
++        serializer = EligibilitySerializer(data=request.data)
++        serializer.is_valid(raise_exception=True)
++        data = serializer.validated_data
++        with transaction.atomic():
++            # Lock the user row too: a first attestation has no Eligibility row to lock.
++            type(request.user).objects.select_for_update().get(pk=request.user.pk)
++            record = Eligibility.objects.filter(user=request.user).first()
++            if record and record.date_of_birth != data['date_of_birth']:
++                return Response({'detail': 'Contact support to correct your recorded birth date.'}, status=400)
++            Eligibility.objects.update_or_create(user=request.user, defaults={
++                'date_of_birth': data['date_of_birth'], 'policy_version': POLICY_VERSION,
++                'accepted_at': timezone.now(),
++            })
++    return Response({'eligible': is_eligible(request.user), 'policy_version': POLICY_VERSION})
++
++
++def received(record):
++    return Response({'id': str(record.id), 'status': 'received'}, status=202)
++
++
++@api_view(['POST'])
++@permission_classes([AuthenticatedMember])
++@throttle_classes([SafetyThrottle])
++def report(request):
++    serializer = ReportSerializer(data=request.data)
++    serializer.is_valid(raise_exception=True)
++    data = serializer.validated_data
++    record = SafetyRequest.objects.create(
++        kind=SafetyRequest.Kind.REPORT, user=request.user,
++        urgent=data['reason'] in ['Underage user', 'Child exploitation or abuse', 'Non-consensual intimate content', 'Harassment or threats'],
++        **data,
++    )
++    return received(record)
++
++
++@api_view(['POST'])
++@permission_classes([AuthenticatedMember])
++@throttle_classes([SafetyThrottle])
++def account_deletion(request):
++    serializer = DeletionSerializer(data=request.data)
++    serializer.is_valid(raise_exception=True)
++    with transaction.atomic():
++        type(request.user).objects.select_for_update().get(pk=request.user.pk)
++        record = SafetyRequest.objects.filter(user=request.user, kind='deletion', status__in=['received', 'reviewing']).first()
++        if not record:
++            record = SafetyRequest.objects.create(kind='deletion', user=request.user,
++                email=getattr(request.user, 'email', ''), ownership_verified=True)
++    return received(record)
++
++
++def policy_page(request, page):
++    if page not in ('privacy', 'terms', 'safety'):
++        raise Http404
++    return render(request, 'safety/policy.html', {'policy': DOCUMENTS[page], 'version': POLICY_VERSION})
++
++
++class DeletionForm(forms.Form):
++    email = forms.EmailField(label='Email address associated with your My Dear Partner account')
++    confirm = forms.BooleanField(label='I request deletion of my account and associated data.')
++
++
++@require_http_methods(['GET', 'POST'])
++def deletion_page(request):
++    form = DeletionForm(request.POST or None)
++    submitted = False
++    if request.method == 'POST' and form.is_valid():
++        # Do not trust an arbitrary X-Forwarded-For header. Configure edge rate limiting too.
++        key = 'deletion-form:' + request.META.get('REMOTE_ADDR', 'unknown')
++        count = cache.get(key, 0)
++        if count >= 5:
++            form.add_error(None, 'Too many requests. Please retry later or contact support@mydearpartner.in.')
++        else:
++            cache.set(key, count + 1, 3600)
++            # No account lookup or automatic deletion. Staff must verify ownership.
++            SafetyRequest.objects.create(kind='deletion', email=form.cleaned_data['email'])
++            submitted = True
++    return render(request, 'safety/deletion.html', {'form': form, 'submitted': submitted})

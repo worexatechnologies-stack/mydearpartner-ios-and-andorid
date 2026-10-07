@@ -1,0 +1,71 @@
+/**
+ * Jest setup for native module mocks used across the test suite.
+ */
+import '@react-native-async-storage/async-storage/jest';
+import 'react-native-gesture-handler/jestSetup';
+
+// Native Notifee is unavailable in the Jest runtime. Keep this mock limited to
+// tests so notification behaviour in the installed app remains unchanged.
+jest.mock('@notifee/react-native', () => ({
+  __esModule: true,
+  default: {
+    requestPermission: jest.fn().mockResolvedValue({ authorizationStatus: 1 }),
+    createChannel: jest.fn().mockResolvedValue('default'),
+    displayNotification: jest.fn().mockResolvedValue('notification-id'),
+    onForegroundEvent: jest.fn(() => jest.fn()),
+  },
+  AndroidImportance: { HIGH: 4 },
+  AuthorizationStatus: { AUTHORIZED: 1 },
+  EventType: { PRESS: 1 },
+}));
+
+jest.mock('@react-native-firebase/messaging', () => ({
+  getMessaging: jest.fn(() => ({})),
+  getToken: jest.fn(),
+  getAPNSToken: jest.fn().mockResolvedValue('apns-token'),
+  isDeviceRegisteredForRemoteMessages: jest.fn().mockResolvedValue(true),
+  registerDeviceForRemoteMessages: jest.fn().mockResolvedValue(undefined),
+  onMessage: jest.fn(() => jest.fn()),
+  onTokenRefresh: jest.fn(() => jest.fn()),
+  onNotificationOpenedApp: jest.fn(() => jest.fn()),
+  getInitialNotification: jest.fn().mockResolvedValue(null),
+  setBackgroundMessageHandler: jest.fn(),
+}));
+
+jest.mock('react-native-quick-crypto', () => ({
+  Buffer: require('buffer').Buffer,
+  install: jest.fn(),
+}));
+
+jest.mock('react-native-base64', () => ({
+  __esModule: true,
+  default: {
+    encode: value => require('buffer').Buffer.from(value, 'utf8').toString('base64'),
+    decode: value => require('buffer').Buffer.from(value, 'base64').toString('utf8'),
+  },
+}));
+
+jest.mock('react-native-vector-icons/Ionicons', () => {
+  const React = require('react');
+  const { Text } = require('react-native');
+  return ({ name }) => React.createElement(Text, null, name);
+});
+
+jest.mock('react-native-keyboard-aware-scroll-view', () => {
+  const { ScrollView } = require('react-native');
+  return { KeyboardAwareScrollView: ScrollView };
+});
+
+jest.mock('react-native-image-picker', () => ({
+  launchImageLibrary: jest.fn(),
+}));
+
+jest.mock('react-native-linear-gradient', () => {
+  const React = require('react');
+  const { View } = require('react-native');
+  return ({ children, ...props }: any) => React.createElement(View, props, children);
+});
+
+jest.mock('react-native-razorpay', () => ({
+  open: jest.fn(),
+}));

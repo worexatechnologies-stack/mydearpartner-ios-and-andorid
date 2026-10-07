@@ -1,0 +1,11 @@
+Django==5.2.17
+djangorestframework==3.18.1
+djangorestframework-simplejwt==5.5.1
+django-cors-headers==4.4.0
+django-celery-beat==2.9.0
+celery[redis]==5.4.0
+# Psycopg v3 with binary wheels for supported Python releases.
+psycopg[binary]==3.3.6
+razorpay==2.0.1
+drf-spectacular==0.30.0
+gunicorn==23.0.0

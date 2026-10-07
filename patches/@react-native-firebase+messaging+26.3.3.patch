@@ -1,0 +1,22 @@
+diff --git a/node_modules/@react-native-firebase/messaging/ios/RNFBMessaging/RNFBMessagingModule.mm b/node_modules/@react-native-firebase/messaging/ios/RNFBMessaging/RNFBMessagingModule.mm
+index 201d660..0b1911e 100644
+--- a/node_modules/@react-native-firebase/messaging/ios/RNFBMessaging/RNFBMessagingModule.mm
++++ b/node_modules/@react-native-firebase/messaging/ios/RNFBMessaging/RNFBMessagingModule.mm
+@@ -75,8 +75,15 @@ - (NSDictionary *)messagingConstantsDictionary {
+ #if TARGET_IPHONE_SIMULATOR
+   constants[@"isRegisteredForRemoteNotifications"] = @NO;
+ #else
+-  constants[@"isRegisteredForRemoteNotifications"] = @(
+-      [RCTConvert BOOL:@([[UIApplication sharedApplication] isRegisteredForRemoteNotifications])]);
++  __block BOOL isRegistered = NO;
++  if ([NSThread isMainThread]) {
++    isRegistered = [[UIApplication sharedApplication] isRegisteredForRemoteNotifications];
++  } else {
++    dispatch_sync(dispatch_get_main_queue(), ^{
++      isRegistered = [[UIApplication sharedApplication] isRegisteredForRemoteNotifications];
++    });
++  }
++  constants[@"isRegisteredForRemoteNotifications"] = @(isRegistered);
+ #endif
+   constants[@"isDeliveryMetricsExportToBigQueryEnabled"] =
+       @([RCTConvert BOOL:@(_isDeliveryMetricsExportToBigQueryEnabled)]);

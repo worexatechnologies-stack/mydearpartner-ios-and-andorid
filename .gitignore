@@ -73,3 +73,30 @@ yarn-error.log
 !.yarn/releases
 !.yarn/sdks
 !.yarn/versions
+android/keystore.properties
+
+# Backend secrets and local state
+.env
+.env.*
+!.env.example
+**/.venv/
+**/.venv-release/
+**/__pycache__/
+*.pyc
+server/db.sqlite3
+
+# Release artifacts and local audit output
+*.apk
+*.aab
+*.idsig
+/scratch/
+/backend/dist/
+*.log
+
+# Private credentials and signing material
+*.pem
+*.p12
+*.p8
+*.jks
+**/service-account*.json
+**/serviceAccount*.json

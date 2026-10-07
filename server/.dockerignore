@@ -1,0 +1,17 @@
+# Keep credentials, local databases and Python environments out of image layers.
+.env
+.env.*
+!.env.example
+.venv
+.venv-*
+venv
+__pycache__
+*.pyc
+*.pyo
+db.sqlite3
+db.sqlite3-*
+.git
+.pytest_cache
+.coverage
+htmlcov
+*.log

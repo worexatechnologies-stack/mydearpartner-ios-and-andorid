@@ -1,0 +1,9 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Delete your My Dear Partner account</title></head>
+<body><main><h1>Delete your My Dear Partner account and associated data</h1>
+<p>You can request deletion here without installing or signing into the app. We will verify account ownership before taking action. Submitting a request does not immediately delete an account.</p>
+<p>Deletion covers your profile, photos, verification uploads, messages and device tokens. Limited payment, legal or safety records may need to be retained. Support will explain applicable exceptions and expected completion time. Copies held by other users may remain. A separately recurring payment arrangement may need to be cancelled with its provider.</p>
+{% if submitted %}<p>Your request has been received. Support will contact you to verify ownership and confirm next steps.</p>
+{% else %}<form method="post">{% csrf_token %}{{ form.as_p }}<button type="submit">Request account and data deletion</button></form>{% endif %}
+<p>Contact: <a href="mailto:support@mydearpartner.in">support@mydearpartner.in</a></p><a href="/policies/privacy/">Privacy Policy</a>
+</main></body></html>

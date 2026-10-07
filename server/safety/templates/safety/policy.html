@@ -1,0 +1,6 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{{ policy.title }} | My Dear Partner</title></head>
+<body><main><h1>{{ policy.title }}</h1><p>My Dear Partner · Version {{ version }}</p>
+{% for section in policy.sections %}<h2>{{ section.heading }}</h2><p>{{ section.body }}</p>{% endfor %}
+<nav><a href="/policies/privacy/">Privacy Policy</a> · <a href="/policies/terms/">Terms</a> · <a href="/policies/safety/">Child Safety Standards</a> · <a href="/account-deletion/">Request account deletion</a></nav>
+</main></body></html>

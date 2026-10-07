@@ -1,0 +1,78 @@
+{
+  "version": "2026-09-28",
+  "privacy": {
+    "title": "Privacy Policy",
+    "sections": [
+      {
+        "heading": "My Dear Partner",
+        "body": "My Dear Partner provides adult matchmaking and messaging. Contact support@mydearpartner.in for privacy questions, access or correction requests, account deletion, or safety concerns."
+      },
+      {
+        "heading": "Information used by the service",
+        "body": "We process account identifiers and credentials; profile information you provide, including age, location, religion, occupation and preferences; uploaded profile photos; interests and messages; notification preferences and device push tokens; membership and payment records; and reports you submit. Optional verification uploads include identity or income documents and selfies. Provide only information needed for the feature you choose."
+      },
+      {
+        "heading": "Purpose and visibility",
+        "body": "We use this information to operate accounts, show profiles and matches, deliver messages and notifications, process memberships, review verification submissions, prevent abuse and respond to requests. Profile information and photos are visible to other members according to the available privacy settings. Messages are delivered to their recipients. A report shares the details you enter with the safety team; avoid unrelated personal information."
+      },
+      {
+        "heading": "Service providers",
+        "body": "Our hosting services process app data. Firebase Cloud Messaging delivers push notifications. Razorpay processes payments when that checkout is available. Payment providers receive the information needed to process a transaction under their own privacy policies. Information may also be disclosed where legally required. We do not sell personal data."
+      },
+      {
+        "heading": "Permissions and choices",
+        "body": "You choose individual photos or documents using the system picker. Camera access is used when you choose to take a verification selfie. Notification permission is optional. You can change profile visibility and notification preferences in Settings. Verification documents are intended for review, not for display on your public profile."
+      },
+      {
+        "heading": "Retention and deletion",
+        "body": "Account information is kept while needed to provide your account. You can request deletion of your account and associated profile, photos, verification uploads, messaging data and device tokens from Account deletion in the app or the public account-deletion page. Requests are reviewed to confirm ownership and identify the data held. Limited payment, fraud-prevention, safety or legally required records may need to be retained; the support team will explain any applicable retention and the expected completion time. Deactivation alone is not deletion. Copies already received or saved by other users may remain with them."
+      },
+      {
+        "heading": "Security and children",
+        "body": "The app communicates with our service over encrypted connections and stores login tokens in device secure storage. No system can guarantee absolute security. This service is for adults aged 18 or older. Report suspected underage accounts through the in-app reporting feature."
+      }
+    ]
+  },
+  "terms": {
+    "title": "Terms of Service",
+    "sections": [
+      {
+        "heading": "Eligibility and consent",
+        "body": "You must be at least 18 years old and provide accurate information to use My Dear Partner. By accepting these terms you also acknowledge the Privacy Policy and Community & Child Safety Standards. Do not impersonate another person or misrepresent your age or identity."
+      },
+      {
+        "heading": "Content and conduct",
+        "body": "Only upload content you have the right and consent to share. Harassment, threats, scams, trafficking, sexual exploitation, child sexual abuse material, non-consensual intimate imagery, unlawful deepfakes and other illegal content are prohibited. Do not generate, alter, upload or distribute synthetic content that is unlawful, sexually exploitative, or deceptively impersonates someone. Do not solicit money through deceptive relationships."
+      },
+      {
+        "heading": "Safety and enforcement",
+        "body": "Report objectionable profiles, photos or messages using Report in the app. You can also block a member. Reports may lead to content removal, account restriction or termination, and referral to the appropriate authorities where required. Report information is reviewed by the safety team. Never upload or forward suspected child sexual abuse imagery as evidence; report the account or message instead."
+      },
+      {
+        "heading": "Memberships and support",
+        "body": "Any purchase must show its price, duration and available benefits before payment. Contact support@mydearpartner.in for membership, refund, grievance or account assistance. Deleting the app does not delete your account or automatically cancel an independently recurring payment arrangement. Account deletion can be requested separately."
+      }
+    ]
+  },
+  "safety": {
+    "title": "Community & Child Safety Standards",
+    "sections": [
+      {
+        "heading": "Adults only",
+        "body": "My Dear Partner is for people aged 18 and over. Underage accounts are not permitted. Report a suspected underage member using Report profile or Report conversation."
+      },
+      {
+        "heading": "Zero tolerance for exploitation",
+        "body": "Child sexual abuse and exploitation (CSAE) and child sexual abuse material (CSAM) are prohibited, including grooming, sextortion, trafficking and sexualized synthetic depictions of minors. Non-consensual intimate imagery, unlawful deepfakes, impersonation, harassment and scams are also prohibited."
+      },
+      {
+        "heading": "Report and block",
+        "body": "Open a member's profile or conversation menu and choose Report. You can report an individual incoming message using its Report message control. Select the relevant reason and describe the concern. Do not attach or reproduce illegal imagery. Blocking is available separately and does not submit a report."
+      },
+      {
+        "heading": "Response and contact",
+        "body": "The safety team reviews reports and may restrict accounts or remove content. Confirmed child sexual abuse material must be removed and reported to the appropriate regional or national authority as required by law. For urgent safety concerns or grievances, contact support@mydearpartner.in and identify My Dear Partner and the relevant account or report reference. If someone is in immediate danger, contact local emergency services."
+      }
+    ]
+  }
+}

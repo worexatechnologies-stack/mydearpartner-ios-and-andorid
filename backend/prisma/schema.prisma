@@ -1,0 +1,87 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id              String    @id @default(uuid())
+  email           String    @unique
+  password        String
+  profileComplete Boolean   @default(false)
+  profile         Profile?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+}
+
+model Profile {
+  id                 String   @id @default(uuid())
+  userId             String   @unique
+  user               User     @relation(fields: [userId], references: [id])
+  name               String
+  age                Int
+  gender             String
+  city               String
+  state              String?
+  religion           String
+  profession         String
+  company            String?
+  education          String
+  height             String
+  about              String
+  photo              String
+  interests          String[] // PostgreSQL array
+  compatibilityScore Int?
+  isVerified         Boolean  @default(false)
+  isOnline           Boolean  @default(false)
+  diet               String?
+  income             String?
+  motherTongue       String?
+  horoscope          String?
+  maritalStatus      String?
+  
+  sentInterests     Interest[] @relation("SentInterests")
+  receivedInterests Interest[] @relation("ReceivedInterests")
+  
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+}
+
+model Interest {
+  id           String   @id @default(uuid())
+  fromUserId   String
+  toUserId     String
+  status       String   @default("pending") // 'pending', 'accepted', 'declined'
+  
+  fromProfile  Profile  @relation("SentInterests", fields: [fromUserId], references: [id])
+  toProfile    Profile  @relation("ReceivedInterests", fields: [toUserId], references: [id])
+  
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@unique([fromUserId, toUserId])
+}
+
+model Chat {
+  id             String    @id @default(uuid())
+  participantIds String[]  // Store profile IDs
+  lastMessage    String?
+  lastMessageAt  DateTime?
+  messages       Message[]
+  
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+}
+
+model Message {
+  id        String   @id @default(uuid())
+  chatId    String
+  chat      Chat     @relation(fields: [chatId], references: [id])
+  senderId  String
+  text      String
+  
+  createdAt DateTime @default(now())
+}
