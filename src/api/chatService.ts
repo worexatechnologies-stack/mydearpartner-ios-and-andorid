@@ -172,7 +172,16 @@ export async function getMessages(
     data = await get<any>(`/conversations/${target}/messages/`);
   } catch (err: any) {
     if ([404, 405].includes(err?.status) && target !== chatId) {
-      data = await get<any>(`/conversations/${chatId}/messages/`);
+      try {
+        data = await get<any>(`/conversations/${chatId}/messages/`);
+      } catch (fallbackErr: any) {
+        if ([404, 405].includes(fallbackErr?.status)) {
+          return [];
+        }
+        throw fallbackErr;
+      }
+    } else if ([404, 405].includes(err?.status)) {
+      return [];
     } else {
       throw err;
     }
@@ -193,8 +202,6 @@ export async function sendMessage(
   text: string,
   partnerId?: string,
 ): Promise<Message> {
-  // The deployed API identifies the recipient by member/account ID, while
-  // chatId identifies the local conversation used to display the response.
   const target = partnerId || chatId;
   const data = await post<any>(`/conversations/${target}/messages/`, {
     text: text,

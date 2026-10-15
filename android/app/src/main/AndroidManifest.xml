@@ -3,9 +3,6 @@
 
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.CAMERA" />
-    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" tools:node="remove" />
-    <uses-permission android:name="android.permission.READ_MEDIA_VIDEO" tools:node="remove" />
-    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" tools:node="remove" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.VIBRATE" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
@@ -16,6 +13,7 @@
       android:icon="@mipmap/ic_launcher"
       android:roundIcon="@mipmap/ic_launcher_round"
       android:allowBackup="false"
+      android:resizeableActivity="true"
       android:theme="@style/AppTheme"
       android:usesCleartextTraffic="${usesCleartextTraffic}"
       android:supportsRtl="true">
@@ -51,5 +49,10 @@
             <data android:scheme="mydearpartner" />
         </intent-filter>
       </activity>
+      <!-- Allow checkout to resize in split screen and on foldables/tablets.
+           Its runtime orientation behavior is controlled by rotate: true. -->
+      <activity
+        android:name="com.razorpay.CheckoutActivity"
+        android:resizeableActivity="true" />
     </application>
 </manifest>

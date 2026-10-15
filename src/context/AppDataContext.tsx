@@ -1038,7 +1038,10 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
         ) {
           resolvedPartner = partnerId;
         }
-        const memberId = await waitForMessagingCryptoReady();
+        let memberId = await waitForMessagingCryptoReady();
+        if (!memberId) {
+          memberId = myMemberIdRef.current || currentUser?.id || currentUser?.profile?.userId || currentUser?.profile?.id || null;
+        }
         if (!memberId) throw new Error('Messaging is not ready. Please try again.');
         const msgs = await ChatService.getMessages(chatId, memberId, resolvedPartner ?? chatId);
 

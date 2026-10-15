@@ -502,6 +502,8 @@ export default function MembershipScreen({ navigation }: Props) {
           amount: order.amount, // Razorpay requires paise; server-derived
           currency: order.currency,
           name: 'My Dear Partner',
+          // Checkout otherwise locks orientation in BaseCheckoutActivity.
+          rotate: true,
           prefill: {
             email: currentUser?.email ?? '',
             contact: currentUser?.profile?.mobileNumber ?? '',

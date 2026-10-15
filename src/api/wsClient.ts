@@ -30,6 +30,7 @@ class ChatWebSocket {
   private chatId: string | null = null;
   private partnerId: string | null = null;
   private usePartnerRoute = true;
+  private useSubprotocol = true;
   private reconnectAttempts = 0;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private messageCallback: WsMessageCallback | null = null;
@@ -49,12 +50,13 @@ class ChatWebSocket {
     this.disconnect();
     this.chatId = chatId;
     this.partnerId = partnerId || null;
-    this.usePartnerRoute = Boolean(partnerId && partnerId !== chatId);
+    this.usePartnerRoute = false;
     this.messageCallback = onMessage;
     this.statusCallback = onStatus ?? null;
     this.typingCallback = onTyping ?? null;
     this.presenceCallback = onPresence ?? null;
     this.shouldReconnect = true;
+    this.useSubprotocol = true;
     this.reconnectAttempts = 0;
     await this._connect();
   }
@@ -75,7 +77,7 @@ class ChatWebSocket {
 
     try {
       // Subprotocol authentication as required by Daphne / Django Channels
-      if (token) {
+      if (token && this.useSubprotocol) {
         this.ws = new WebSocket(url, ['access_token', token]);
       } else {
         this.ws = new WebSocket(url);
@@ -170,9 +172,15 @@ class ChatWebSocket {
     this.ws.onclose = (event: any) => {
       
       this.statusCallback?.('disconnected');
-      // If closing with partner route on first try, fall back to chatId route
-      if (this.usePartnerRoute && this.reconnectAttempts === 0) {
-        this.usePartnerRoute = false;
+      // If closing with chatId route on first try, fall back to partnerId route if available
+      if (!this.usePartnerRoute && this.partnerId && this.reconnectAttempts === 0) {
+        this.usePartnerRoute = true;
+        this._connect().catch(console.error);
+        return;
+      }
+      // If closing with subprotocols enabled, retry standard connection without subprotocol
+      if (this.useSubprotocol && this.reconnectAttempts <= 1) {
+        this.useSubprotocol = false;
         this._connect().catch(console.error);
         return;
       }

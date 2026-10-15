@@ -7,7 +7,6 @@ import android.os.Build
 import androidx.core.app.ActivityCompat
 import com.facebook.react.ReactActivity
 import com.facebook.react.ReactActivityDelegate
-import com.facebook.react.defaults.DefaultNewArchitectureEntryPoint.fabricEnabled
 import com.facebook.react.defaults.DefaultReactActivityDelegate
 
 class MainActivity : ReactActivity() {
@@ -23,7 +22,8 @@ class MainActivity : ReactActivity() {
    */
   override fun onCreate(savedInstanceState: Bundle?) {
     setTheme(R.style.AppTheme)
-    super.onCreate(savedInstanceState)
+    // react-native-screens requires null to prevent Fragment restoration crashes on activity recreation
+    super.onCreate(null)
     // Android 13+ requires an explicit runtime grant. Request it at startup so
     // notification delivery does not depend on the user reaching the login flow.
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
@@ -37,9 +37,8 @@ class MainActivity : ReactActivity() {
   }
 
   /**
-   * Returns the instance of the [ReactActivityDelegate]. We use [DefaultReactActivityDelegate]
-   * which allows you to enable New Architecture with a single boolean flags [fabricEnabled]
+   * Returns the instance of the [ReactActivityDelegate].
    */
   override fun createReactActivityDelegate(): ReactActivityDelegate =
-      DefaultReactActivityDelegate(this, mainComponentName, fabricEnabled)
+      DefaultReactActivityDelegate(this, mainComponentName)
 }

@@ -7,6 +7,7 @@ import EditProfileScreen from '../screens/EditProfileScreen';
 import ProfileDetailScreen from '../screens/ProfileDetailScreen';
 import ProfileSetupScreen from '../screens/ProfileSetupScreen';
 import SplashScreen from '../screens/SplashScreen';
+import ProcessingScreen from '../screens/ProcessingScreen';
 import BlockedScreen from '../screens/member/BlockedScreen';
 import CompareScreen from '../screens/member/CompareScreen';
 import MembershipScreen from '../screens/member/MembershipScreen';
@@ -43,8 +44,12 @@ export default function RootNavigator() {
     }
   }, [splashComplete, isLoading, currentUser?.profileComplete]);
 
-  if (isLoading || !splashComplete) {
+  if (!splashComplete) {
     return <SplashScreen onComplete={finishSplash} />;
+  }
+
+  if (isLoading) {
+    return <ProcessingScreen />;
   }
 
   if (sessionError) {

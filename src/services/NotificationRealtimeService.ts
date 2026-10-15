@@ -1,7 +1,8 @@
 import { AppState,DeviceEventEmitter } from 'react-native';
 import { WS_BASE_URL } from '../config/env';
 import { loadTokens } from '../utils/keychain';
-import { interestEventKind } from './InterestNotificationService';
+import { interestEventKind, notifyInterest } from './InterestNotificationService';
+import { handleIncomingPush } from './IncomingPushService';
 import { presenceUserIds } from './PresenceService';
 
 export async function handleRealtimeNotification(event: any) {
@@ -21,7 +22,10 @@ export async function handleRealtimeNotification(event: any) {
     DeviceEventEmitter.emit('REFRESH_APP_DATA');
     return;
   }
-  const data = { ...event.data, kind: event.data?.kind ?? event.type };
+  const data = {
+    ...event.data,
+    kind: event.data?.kind ?? event.data?.notification_type ?? event.notification_type ?? event.type,
+  };
   const notificationType = event.notification_type ?? data.notification_type ?? event.type;
   if (notificationType === 'MATCH_REMOVED' || data.kind === 'MATCH_REMOVED' || event.type === 'match.removed') {
     DeviceEventEmitter.emit('REFRESH_INTERESTS');
@@ -33,15 +37,23 @@ export async function handleRealtimeNotification(event: any) {
   const kind = interestEventKind(data, event.notification_type ?? '');
 
   if (kind) {
-    // Only refresh UI, do not generate duplicate local notifications for WebSocket events
     DeviceEventEmitter.emit('REFRESH_INTERESTS');
     DeviceEventEmitter.emit('REFRESH_APP_DATA');
+    await notifyInterest({
+      id: String(data.interest_id ?? data.interestId ?? event.entity_id ?? '') || undefined,
+      kind,
+      senderName: data.sender_name ?? data.senderName,
+      profileId: data.profile_id ?? data.sender_profile_id ?? data.sender_id,
+      data,
+    }, true);
     return;
   }
 
+  const chatKind = String(data.kind).toLowerCase();
   const isChat =
-    data.kind === 'chat_message' ||
-    data.kind === 'message' ||
+    chatKind === 'chat_message' ||
+    chatKind === 'chat.message' ||
+    chatKind === 'message' ||
     Boolean(data.encrypted_text) ||
     Boolean(data.message_id) ||
     Boolean(data.conversation_id) ||
@@ -50,13 +62,17 @@ export async function handleRealtimeNotification(event: any) {
     event.type === 'message';
 
   if (isChat) {
-    // Only refresh UI, do not generate duplicate local notifications for WebSocket events
     DeviceEventEmitter.emit('REFRESH_CHATS');
     DeviceEventEmitter.emit('REFRESH_APP_DATA');
     const conversationId =
       data.conversation_id || data.chat_id || data.conversationId;
     if (conversationId) {
       DeviceEventEmitter.emit('REFRESH_ACTIVE_CHAT', conversationId);
+    }
+    // Share push suppression, decryption and ID deduplication with FCM.
+    // Ignore incomplete refresh signals, which cannot be deduplicated.
+    if (data.message_id) {
+      await handleIncomingPush({ data: { ...data, kind: 'chat_message' } }, true);
     }
     return;
   }

@@ -185,47 +185,8 @@ export default function SignupScreen() {
     <View style={styles.screen}>
       <StatusBar barStyle="light-content" />
 
-      {/* Full Screen Background Image */}
-      <Image
-        source={require('../../assets/images/login_bg_indian_sunset.jpg')}
-        style={[StyleSheet.absoluteFill, { width: width, height: height }]}
-        resizeMode="cover"
-        pointerEvents="none"
-      />
-
-      {/* Dark Gradient Overlay */}
-      <LinearGradient
-        colors={['rgba(15,10,20,0.4)', 'rgba(10,5,15,0.7)', 'rgba(5,2,5,0.95)']}
-        locations={[0, 0.3, 0.8]}
-        style={StyleSheet.absoluteFill}
-        pointerEvents="none"
-      />
-
-      {/* Fixed Header & Top Copy */}
-      <View style={{ paddingTop: insets.top + spacing.sm, paddingHorizontal: spacing.lg, zIndex: 10 }}>
-        <View style={[styles.header, { paddingHorizontal: 0, marginTop: 0 }]}>
-          <Pressable onPress={() => navigation.goBack()} style={styles.backBtn}>
-            <Icon name="arrow-back" size={20} color="#FFFFFF" />
-          </Pressable>
-          <View style={styles.brand}>
-            <Image source={require('../../assets/logo.png')} style={styles.brandLogo} resizeMode="contain" />
-            <View>
-              <Text style={styles.brandName}>MyDear<Text style={{ color: '#FF1E66' }}>Partner</Text></Text>
-            </View>
-          </View>
-          <View style={styles.headerRight} />
-        </View>
-
-        <View style={[styles.copyContainer, { paddingHorizontal: 0, marginTop: 16 }]}>
-          <Text style={styles.eyebrowText}>WELCOME</Text>
-          <Text style={styles.title}>Create your</Text>
-          <Text style={styles.titlePink}>account</Text>
-          <Text style={styles.subtitle}>Start with the essentials. You can tell your story and add photos next.</Text>
-        </View>
-      </View>
-
       <KeyboardAwareScrollView
-        style={{ flex: 1, marginTop: spacing.xl }}
+        style={{ flex: 1 }}
         contentContainerStyle={{ flexGrow: 1 }}
         showsVerticalScrollIndicator={false}
         bounces={false}
@@ -233,6 +194,49 @@ export default function SignupScreen() {
         enableOnAndroid={true}
         extraScrollHeight={Platform.OS === 'ios' ? 20 : 0}
       >
+        <View style={{ position: 'absolute', top: 0, left: 0, right: 0, height: height }}>
+          {/* Full Screen Background Image */}
+          <Image
+            source={require('../../assets/images/login_bg_indian_sunset.jpg')}
+            style={[StyleSheet.absoluteFill, { width: width, height: height }]}
+            resizeMode="cover"
+            pointerEvents="none"
+          />
+
+          {/* Dark Gradient Overlay */}
+          <LinearGradient
+            colors={['rgba(15,10,20,0.4)', 'rgba(10,5,15,0.7)', 'rgba(5,2,5,0.95)']}
+            locations={[0, 0.3, 0.8]}
+            style={StyleSheet.absoluteFill}
+            pointerEvents="none"
+          />
+        </View>
+
+        {/* Fixed Header & Top Copy */}
+        <View style={{ paddingTop: insets.top + spacing.sm, paddingHorizontal: spacing.lg, zIndex: 10 }}>
+          <View style={[styles.header, { paddingHorizontal: 0, marginTop: 0 }]}>
+            <Pressable onPress={() => navigation.goBack()} style={styles.backBtn}>
+              <Icon name="arrow-back" size={20} color="#FFFFFF" />
+            </Pressable>
+            <View style={styles.brand}>
+              <Image source={require('../../assets/logo.png')} style={styles.brandLogo} resizeMode="contain" />
+              <View>
+                <Text style={styles.brandName}>MyDear<Text style={{ color: '#FF1E66' }}>Partner</Text></Text>
+              </View>
+            </View>
+            <View style={styles.headerRight} />
+          </View>
+
+          <View style={[styles.copyContainer, { paddingHorizontal: 0, marginTop: 16 }]}>
+            <Text style={styles.eyebrowText}>WELCOME</Text>
+            <Text style={styles.title}>Create your</Text>
+            <Text style={styles.titlePink}>account</Text>
+            <Text style={styles.subtitle}>Start with the essentials. You can tell your story and add photos next.</Text>
+          </View>
+        </View>
+
+        <View style={{ height: spacing.xl }} />
+
         {/* Bottom Area */}
         <View style={styles.bottomArea}>
           <LinearGradient

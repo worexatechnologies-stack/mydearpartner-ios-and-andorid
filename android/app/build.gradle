@@ -97,9 +97,12 @@ android {
         applicationId "com.mydearpartner"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 37
-        versionName "0.3.1"
+        versionCode 39
+        versionName "0.3.2"
         manifestPlaceholders = [usesCleartextTraffic: "true"]
+        ndk {
+            abiFilters "armeabi-v7a", "arm64-v8a", "x86", "x86_64"
+        }
     }
     signingConfigs {
         debug {
@@ -131,9 +134,21 @@ android {
             manifestPlaceholders = [usesCleartextTraffic: "false"]
         }
     }
+    packagingOptions {
+        jniLibs {
+            useLegacyPackaging = true
+        }
+        pickFirst 'lib/arm64-v8a/libc++_shared.so'
+        pickFirst 'lib/armeabi-v7a/libc++_shared.so'
+        pickFirst 'lib/x86/libc++_shared.so'
+        pickFirst 'lib/x86_64/libc++_shared.so'
+        pickFirst '**/libc++_shared.so'
+    }
 }
 
 dependencies {
+    // 1.14 adds Android 15 system-bar handling for date pickers and bottom sheets.
+    implementation("com.google.android.material:material:1.14.0")
     // The version of react-native is set by the React Native Gradle Plugin
     implementation("com.facebook.react:react-android")
     // Needed by the native FCM fallback service, which runs when JS is not alive.

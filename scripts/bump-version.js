@@ -40,6 +40,14 @@ plist = plist.replace(
   }
 );
 fs.writeFileSync(iosPlistPath, plist);
-console.log(`✅ Bumped iOS CFBundleShortVersionString to ${newVersion} and incremented CFBundleVersion`);
+// 4. Bump iOS project.pbxproj
+const iosPbxprojPath = path.join(__dirname, '../ios/MyDearPartner.xcodeproj/project.pbxproj');
+if (fs.existsSync(iosPbxprojPath)) {
+  let pbx = fs.readFileSync(iosPbxprojPath, 'utf8');
+  pbx = pbx.replace(/CURRENT_PROJECT_VERSION = \d+;/g, `CURRENT_PROJECT_VERSION = ${newVersionCode};`);
+  pbx = pbx.replace(/MARKETING_VERSION = [^;]+;/g, `MARKETING_VERSION = ${newVersion};`);
+  fs.writeFileSync(iosPbxprojPath, pbx);
+  console.log(`✅ Bumped iOS project.pbxproj CURRENT_PROJECT_VERSION to ${newVersionCode} and MARKETING_VERSION to ${newVersion}`);
+}
 
 console.log('\n🎉 Version bump complete! You are ready to build a new release.');

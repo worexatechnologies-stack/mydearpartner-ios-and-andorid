@@ -44,6 +44,11 @@ target 'MyDearPartner' do
         config.build_settings['GCC_WARN_INHIBIT_ALL_WARNINGS'] = 'NO'
         config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = min_ios_version_supported
       end
+      target.build_phases.each do |build_phase|
+        if build_phase.is_a?(Xcodeproj::Project::Object::PBXShellScriptBuildPhase)
+          build_phase.always_out_of_date = "1"
+        end
+      end
     end
   end
 end

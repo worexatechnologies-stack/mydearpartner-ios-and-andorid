@@ -52,10 +52,13 @@ function SessionDataProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (currentUser?.id) {
       try {
-        const crashlytics = require('@react-native-firebase/crashlytics').default;
-        crashlytics().setUserId(currentUser.id);
+        const crashMod = require('@react-native-firebase/crashlytics');
+        const getCrashlytics = typeof crashMod === 'function' ? crashMod : crashMod?.default;
+        if (typeof getCrashlytics === 'function') {
+          getCrashlytics().setUserId(currentUser.id);
+        }
       } catch (err) {
-        console.warn('Crashlytics error:', err);
+        // Crashlytics native module is optional in local debug builds
       }
       return startNotificationRealtime();
     }

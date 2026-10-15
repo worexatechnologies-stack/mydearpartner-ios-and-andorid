@@ -323,7 +323,7 @@ export function usePlanAllowance() {
     const startOfToday = new Date();
     startOfToday.setHours(0, 0, 0, 0);
     const startTs = startOfToday.getTime();
-    return sentInterests.filter(item => {
+    return (sentInterests ?? []).filter(item => {
       if (!item) return false;
       const ts =
         typeof item.createdAt === 'number'

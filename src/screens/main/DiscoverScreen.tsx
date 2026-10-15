@@ -38,6 +38,9 @@ import { useAppData } from '../../context/AppDataContext';
 import { MainTabParamList, RootStackParamList } from '../../navigation/types';
 import { usePlanAllowance } from '../../utils/planAllowance';
 import AuthImage from '../../components/AuthImage';
+import ProfileCardSkeleton from '../../components/ProfileCardSkeleton';
+import MatchCelebrationModal from '../../components/MatchCelebrationModal';
+import { triggerHaptic } from '../../utils/haptics';
 import { Profile } from '../../types/models';
 import { FLOATING_TAB_BAR_BOTTOM } from '../../navigation/tabBarLayout';
 
@@ -86,6 +89,11 @@ export default function DiscoverScreen({ navigation }: Props) {
   const [activeFilter, setActiveFilter] = useState<
     'Discover' | 'Matches' | 'NearYou' | 'Online'
   >('Discover');
+  const [celebration, setCelebration] = useState<{
+    visible: boolean;
+    name: string;
+    avatarUrl?: string | null;
+  }>({ visible: false, name: '' });
   const [hiddenProfileIds, setHiddenProfileIds] = useState<Set<string>>(
     new Set(),
   );
@@ -247,8 +255,8 @@ export default function DiscoverScreen({ navigation }: Props) {
       );
     if (isLoadingProfiles) {
       return (
-        <View style={styles.emptyContainer}>
-          <Text style={styles.emptyText}>Curating your perfect matches...</Text>
+        <View style={[styles.emptyContainer, { justifyContent: 'flex-start', paddingTop: 8 }]}>
+          <ProfileCardSkeleton />
         </View>
       );
     }
@@ -309,10 +317,24 @@ export default function DiscoverScreen({ navigation }: Props) {
                 <ProfileFeedCard
                   profile={item}
                   navigation={navigation}
-                  onSendInterest={() => sendInterest(item.id, item.userId)}
-                  onSkip={() => handleSkip(item.id)}
+                  onSendInterest={() => {
+                    triggerHaptic('success');
+                    sendInterest(item.id, item.userId);
+                    setCelebration({
+                      visible: true,
+                      name: item.name || 'your match',
+                      avatarUrl: item.photo || item.photos?.[0],
+                    });
+                  }}
+                  onSkip={() => {
+                    triggerHaptic('light');
+                    handleSkip(item.id);
+                  }}
                   isShortlisted={isShortlisted(item.id)}
-                  onToggleShortlist={() => toggleShortlist(item.id)}
+                  onToggleShortlist={() => {
+                    triggerHaptic('medium');
+                    toggleShortlist(item.id);
+                  }}
                 />
                 <View style={styles.scrollHint}>
                   <Text style={styles.scrollHintText}>
@@ -324,6 +346,12 @@ export default function DiscoverScreen({ navigation }: Props) {
           />
         </View>
       </SafeAreaView>
+      <MatchCelebrationModal
+        visible={celebration.visible}
+        profileName={celebration.name}
+        avatarUrl={celebration.avatarUrl}
+        onClose={() => setCelebration({ visible: false, name: '' })}
+      />
     </View>
   );
 }

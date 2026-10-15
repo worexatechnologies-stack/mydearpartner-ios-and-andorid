@@ -20,6 +20,7 @@ export default function BufferingIndicator({
   const reducedMotion = useReducedMotion();
   const rotation = useRef(new Animated.Value(0)).current;
   const pulse = useRef(new Animated.Value(0)).current;
+  
   const progress = useRef(new Animated.Value(0)).current;
   const gradientId = `buffering-${useId().replace(/:/g, '')}`;
 
@@ -62,7 +63,7 @@ export default function BufferingIndicator({
         </Animated.View>
         <Animated.View style={{ opacity: pulse.interpolate({ inputRange: [0, 1], outputRange: [1, 0.75] }),
           transform: [{ scale: pulse.interpolate({ inputRange: [0, 1], outputRange: [1, 0.88] }) }] }}>
-          <Image source={require('../assets/images/buffering-logo.png')} resizeMode="contain"
+          <Image source={require('../assets/images/logo.png')} resizeMode="contain"
             accessible={false} style={{ width: diameter / 2, height: diameter * 0.4375 }} />
         </Animated.View>
       </View>

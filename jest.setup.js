@@ -69,3 +69,32 @@ jest.mock('react-native-linear-gradient', () => {
 jest.mock('react-native-razorpay', () => ({
   open: jest.fn(),
 }));
+
+jest.mock('react-native-reanimated', () => {
+  return {
+    __esModule: true,
+    useSharedValue: jest.fn((val) => ({ value: val })),
+    useAnimatedStyle: jest.fn(() => ({})),
+    withTiming: jest.fn(x => x),
+    withRepeat: jest.fn(x => x),
+    withSequence: jest.fn(x => x),
+    withSpring: jest.fn(x => x),
+    withDelay: jest.fn((delay, x) => x),
+    runOnJS: jest.fn(fn => fn),
+    Easing: {
+      bezier: jest.fn(),
+      linear: jest.fn(),
+      ease: jest.fn(),
+      in: jest.fn(),
+      out: jest.fn(),
+      inOut: jest.fn(),
+    },
+    default: {
+      createAnimatedComponent: jest.fn(Component => Component),
+      View: 'View',
+      Text: 'Text',
+      Image: 'Image',
+      ScrollView: 'ScrollView',
+    },
+  };
+});

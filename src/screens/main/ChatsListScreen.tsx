@@ -16,6 +16,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
+import LinearGradient from 'react-native-linear-gradient';
 import Icon from 'react-native-vector-icons/Ionicons';
 import AnimatedButton from '../../components/AnimatedButton';
 import AuthImage from '../../components/AuthImage';
@@ -36,6 +37,7 @@ import {
 } from '../../theme/theme';
 import { getChatContentPreview } from '../../utils/chatContent';
 import { triggerHaptic } from '../../utils/haptics';
+import { usePlanAllowance } from '../../utils/planAllowance';
 
 type Props = CompositeScreenProps<
   BottomTabScreenProps<MainTabParamList, 'Chats'>,
@@ -58,6 +60,7 @@ export default function ChatsListScreen({ navigation }: Props) {
     isUserMuted,
     isBlockedByMe,
   } = useAppData();
+  const { isPremium } = usePlanAllowance();
   const [refreshing, setRefreshing] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -207,6 +210,66 @@ export default function ChatsListScreen({ navigation }: Props) {
             </AnimatedButton>
           )}
         </View>
+      )}
+
+      {/* Premium Expired / Required Notice */}
+      {!isPremium && (
+        <AnimatedButton
+          style={styles.premiumBannerCard}
+          onPress={() => {
+            triggerHaptic('light');
+            navigation.navigate('Membership');
+          }}
+          accessibilityLabel="Upgrade to Premium Membership"
+        >
+          <LinearGradient
+            colors={['#2A1024', '#170614']}
+            style={styles.premiumBannerGradient}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+          >
+            {/* Ambient luxury light sheen */}
+            <LinearGradient
+              colors={['rgba(245, 158, 11, 0.16)', 'transparent']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 0.8, y: 0.6 }}
+              style={StyleSheet.absoluteFill}
+            />
+
+            <View style={styles.premiumBannerIconCircle}>
+              <LinearGradient
+                colors={['#FBBF24', '#D97706']}
+                style={StyleSheet.absoluteFill}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+              />
+              <Icon name="sparkles" size={19} color="#FFFFFF" />
+            </View>
+
+            <View style={styles.premiumBannerTextWrap}>
+              <View style={styles.premiumBadgeRow}>
+                <Icon name="lock-closed" size={10} color="#FBBF24" style={{ marginRight: 4 }} />
+                <Text style={styles.premiumBadgeText}>CHATS LOCKED • FREE PLAN</Text>
+              </View>
+              <Text style={styles.premiumBannerHeading}>Unlock Unlimited Chats</Text>
+              <Text style={styles.premiumBannerSubheading} numberOfLines={2}>
+                Upgrade to Gold or Platinum to message and connect with matches.
+              </Text>
+            </View>
+
+            <View style={styles.premiumBannerButton}>
+              <LinearGradient
+                colors={['#F59E0B', '#D97706']}
+                style={styles.premiumBannerBtnGradient}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 0 }}
+              >
+                <Text style={styles.premiumBannerButtonText}>Upgrade</Text>
+                <Icon name="chevron-forward" size={13} color="#FFFFFF" />
+              </LinearGradient>
+            </View>
+          </LinearGradient>
+        </AnimatedButton>
       )}
 
       {/* New matches story row */}
@@ -642,5 +705,82 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 11,
     fontWeight: '800',
+  },
+  premiumBannerCard: {
+    marginHorizontal: spacing.lg,
+    marginBottom: spacing.md,
+    borderRadius: 20,
+    overflow: 'hidden',
+    borderWidth: 1.2,
+    borderColor: 'rgba(245, 158, 11, 0.35)',
+    ...shadow.card,
+  },
+  premiumBannerGradient: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    gap: 12,
+  },
+  premiumBannerIconCircle: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden',
+    ...shadow.sm,
+  },
+  premiumBannerTextWrap: {
+    flex: 1,
+    minWidth: 0,
+  },
+  premiumBadgeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(245, 158, 11, 0.15)',
+    alignSelf: 'flex-start',
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+    borderRadius: 6,
+    marginBottom: 4,
+  },
+  premiumBadgeText: {
+    color: '#FBBF24',
+    fontSize: 9.5,
+    fontWeight: '800',
+    letterSpacing: 0.6,
+  },
+  premiumBannerHeading: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: '#FFFFFF',
+    letterSpacing: -0.2,
+    marginBottom: 2,
+  },
+  premiumBannerSubheading: {
+    fontSize: 11.5,
+    color: 'rgba(255, 255, 255, 0.72)',
+    lineHeight: 15.5,
+    fontWeight: '500',
+  },
+  premiumBannerButton: {
+    borderRadius: 20,
+    overflow: 'hidden',
+    flexShrink: 0,
+    ...shadow.sm,
+  },
+  premiumBannerBtnGradient: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 13,
+    paddingVertical: 8,
+    gap: 3,
+  },
+  premiumBannerButtonText: {
+    fontSize: 12.5,
+    fontWeight: '800',
+    color: '#FFFFFF',
+    letterSpacing: 0.2,
   },
 });

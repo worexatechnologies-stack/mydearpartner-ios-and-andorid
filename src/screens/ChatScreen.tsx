@@ -41,6 +41,7 @@ import { subscribeToPresence } from '../services/PresenceService';
 import { Message } from '../types/models';
 import { parseStickerMessage } from '../utils/chatContent';
 import { triggerHaptic } from '../utils/haptics';
+import { usePlanAllowance } from '../utils/planAllowance';
 
 const EMOJI_CATEGORIES = [
   {
@@ -199,6 +200,7 @@ export default function ChatScreen({ route, navigation }: Props) {
     isUserMuted,
   } = useAppData();
   const { currentUser } = useAuth();
+  const { isPremium } = usePlanAllowance();
   const [text, setText] = useState('');
   const [sending, setSending] = useState(false);
   const [partnerTyping, setPartnerTyping] = useState(false);
@@ -289,7 +291,7 @@ export default function ChatScreen({ route, navigation }: Props) {
         if (isMounted) setMessageError(null);
       } catch (error) {
         if (isMounted && isRemovedMatch(error)) setMatchRemoved(true);
-        if (isMounted) setMessageError('Could not load messages. Pull down to retry.');
+        if (isMounted && isPremium) setMessageError('Could not load messages. Pull down to retry.');
       } finally {
         if (isMounted) setLoadingMessages(false);
       }
@@ -385,7 +387,7 @@ export default function ChatScreen({ route, navigation }: Props) {
       }
       Alert.alert(
         restoreTextOnFailure ? 'Couldn’t send message' : 'Couldn’t send sticker',
-        err?.message || 'Please check your connection and try again.',
+        err?.message || (!isPremium ? 'Your premium plan has ended. Upgrade to continue chatting.' : 'Please check your connection and try again.'),
       );
     } finally {
       setSending(false);
@@ -580,6 +582,18 @@ export default function ChatScreen({ route, navigation }: Props) {
           <Text style={styles.blockedByBannerText}>You can't reply to this conversation.</Text>
         </View>
       )}
+      {!iBlocked && !blockedByThem && !connectionClosed && !isPremium && (
+        <TouchableOpacity
+          style={styles.premiumBanner}
+          onPress={() => navigation.navigate('Membership')}
+          activeOpacity={0.85}
+        >
+          <Icon name="sparkles" size={16} color="#F59E0B" style={{ marginRight: 8 }} />
+          <Text style={styles.premiumBannerText}>
+            Chats locked • Free Account. <Text style={{ fontWeight: '800', textDecorationLine: 'underline' }}>Tap to upgrade</Text> and send messages.
+          </Text>
+        </TouchableOpacity>
+      )}
 
       {/* Messages */}
       <View style={[styles.flex, isLarge && styles.largeConstrained]}>
@@ -595,7 +609,10 @@ export default function ChatScreen({ route, navigation }: Props) {
               setLoadingMessages(true);
               loadChatMessages(chatId, otherProfileId)
                 .then(() => setMessageError(null))
-                .catch(() => setMessageError('Could not load messages. Pull down to retry.'))
+                .catch(error => {
+                  if (isRemovedMatch(error)) setMatchRemoved(true);
+                  if (isPremium) setMessageError('Could not load messages. Pull down to retry.');
+                })
                 .finally(() => setLoadingMessages(false));
             }}
             ListHeaderComponent={messageError ? <Text accessibilityRole="alert" style={{ color: '#EF4444', padding: 16 }}>{messageError}</Text> : undefined}
@@ -697,6 +714,52 @@ export default function ChatScreen({ route, navigation }: Props) {
           </View>
         ) : (
           <View style={[styles.inputBar, { paddingBottom: keyboardVisible ? 8 : Math.max(insets.bottom, 8) }]}>
+            {!isPremium && (
+              <TouchableOpacity
+                style={styles.premiumHintRow}
+                onPress={() => navigation.navigate('Membership')}
+                activeOpacity={0.8}
+              >
+                <Icon name="star" size={13} color="#F59E0B" style={{ marginRight: 6 }} />
+                <Text style={styles.premiumHintText} numberOfLines={1}>
+                  Chats locked • Free Account. <Text style={{ fontWeight: '700', textDecorationLine: 'underline' }}>Upgrade to Gold</Text> to send messages.
+                </Text>
+                <Icon name="chevron-forward" size={12} color="#F59E0B" />
+              </TouchableOpacity>
+            )}
+            {messages.length <= 4 && !text.trim() && (
+              <View style={styles.icebreakersWrapper}>
+                <View style={styles.icebreakerHeader}>
+                  <Icon name="sparkles" size={13} color="#FF5C97" style={{ marginRight: 4 }} />
+                  <Text style={styles.icebreakerTitle}>Suggested Icebreakers</Text>
+                </View>
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={styles.icebreakerScroll}
+                >
+                  {[
+                    '👋 Hi! What are your favorite weekend hobbies?',
+                    "✨ Loved your profile! What's your dream travel spot?",
+                    '☕ Coffee or Chai? How do you start your day?',
+                    '🎬 Any good movie or show recommendations lately?',
+                    '💍 What values matter most to you in a life partner?',
+                  ].map((prompt, idx) => (
+                    <TouchableOpacity
+                      key={idx}
+                      style={styles.icebreakerChip}
+                      onPress={() => {
+                        setText(prompt);
+                        triggerHaptic('light');
+                      }}
+                      activeOpacity={0.75}
+                    >
+                      <Text style={styles.icebreakerChipText}>{prompt}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
+              </View>
+            )}
             <View style={styles.inputRow}>
               <TouchableOpacity style={styles.emojiBtn} onPress={() => toggleComposerPanel('emoji')}>
                 <Icon name={composerPanel === 'emoji' ? 'keyboard-outline' : 'happy-outline'} size={24} color={composerPanel === 'emoji' ? '#FF5C97' : '#94A3B8'} />
@@ -865,4 +928,71 @@ const styles = StyleSheet.create({
   emojiGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, paddingBottom: 12 },
   emojiItem: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(255,255,255,0.05)', borderRadius: 12, borderWidth: 1, borderColor: 'rgba(255,255,255,0.05)' },
   emojiChar: { fontSize: 24 },
+
+  premiumBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(245, 158, 11, 0.12)',
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(245, 158, 11, 0.25)',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+  },
+  premiumBannerText: {
+    fontSize: 13,
+    color: '#FBBF24',
+    fontWeight: '600',
+    flex: 1,
+  },
+  premiumHintRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    marginBottom: 8,
+    backgroundColor: 'rgba(245, 158, 11, 0.12)',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(245, 158, 11, 0.25)',
+  },
+  premiumHintText: {
+    color: '#FBBF24',
+    fontSize: 11,
+    fontWeight: '500',
+    flex: 1,
+  },
+  icebreakersWrapper: {
+    marginBottom: 8,
+    paddingTop: 4,
+  },
+  icebreakerHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 8,
+    marginBottom: 6,
+  },
+  icebreakerTitle: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#FF5C97',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  icebreakerScroll: {
+    gap: 8,
+    paddingHorizontal: 4,
+  },
+  icebreakerChip: {
+    backgroundColor: '#261320',
+    borderColor: '#4A1D36',
+    borderWidth: 1,
+    borderRadius: 16,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+  },
+  icebreakerChipText: {
+    fontSize: 12,
+    color: '#FCE7F3',
+    fontWeight: '500',
+  },
 });
