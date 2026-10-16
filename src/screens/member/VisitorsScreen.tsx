@@ -9,6 +9,7 @@ import {
   View,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/Ionicons';
+import LinearGradient from 'react-native-linear-gradient';
 import AuthImage from '../../components/AuthImage';
 import ScreenContainer from '../../components/ScreenContainer';
 import { useAppData } from '../../context/AppDataContext';
@@ -125,24 +126,37 @@ export default function VisitorsScreen({ navigation }: Props) {
 
       {/* Upgrade Banner for premium feel */}
       <View style={styles.vipBanner}>
-        <Icon
-          name="ribbon-outline"
-          size={24}
-          color="#D97706"
-          style={{ marginRight: 10 }}
-        />
-        <View style={styles.vipTexts}>
-          <Text style={styles.vipTitle}>Visitors Feature is Free (Beta)</Text>
-          <Text style={styles.vipSubtitle}>
-            Upgrade to Premium to send unlimited matches to visitors.
-          </Text>
-        </View>
-        <TouchableOpacity
-          style={styles.vipBtn}
-          onPress={() => navigation.navigate('Membership')}
+        <LinearGradient
+          colors={allowance.isPremium ? ['#8B5CF6', '#6D28D9'] : ['#F59E0B', '#D97706']}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 0 }}
+          style={styles.vipGradient}
         >
-          <Text style={styles.vipBtnText}>Upgrade</Text>
-        </TouchableOpacity>
+          <Icon
+            name={allowance.isPremium ? 'shield-checkmark' : 'lock-closed'}
+            size={22}
+            color="#FFF"
+            style={{ marginRight: 10 }}
+          />
+          <View style={styles.vipTexts}>
+            <Text style={styles.vipTitle}>
+              {allowance.isPremium ? 'VIP Visitor Access Active' : 'Who Viewed Your Profile?'}
+            </Text>
+            <Text style={styles.vipSubtitle}>
+              {allowance.isPremium
+                ? 'You have unlimited access to view and connect with all recent visitors.'
+                : `${visitors.length} members viewed your profile. Upgrade to reveal all.`}
+            </Text>
+          </View>
+          {!allowance.isPremium && (
+            <TouchableOpacity
+              style={styles.vipBtn}
+              onPress={() => navigation.navigate('Membership')}
+            >
+              <Text style={styles.vipBtnText}>Unlock</Text>
+            </TouchableOpacity>
+          )}
+        </LinearGradient>
       </View>
 
       <FlatList
@@ -152,18 +166,50 @@ export default function VisitorsScreen({ navigation }: Props) {
         showsVerticalScrollIndicator={false}
         renderItem={({ item, index }) => {
           const interest = interestStatusFor(item.id);
+          const isLocked = !allowance.isPremium && index > 0;
+          const maskedName = isLocked
+            ? `${item.name.charAt(0)}${'•'.repeat(Math.min(6, item.name.length - 1))}`
+            : item.name;
+
           return (
             <TouchableOpacity
-              style={styles.card}
-              onPress={() =>
-                navigation.navigate('ProfileDetail', { profileId: item.id })
-              }
+              style={[styles.card, isLocked && styles.cardLocked]}
+              onPress={() => {
+                if (isLocked) {
+                  Alert.alert(
+                    'Unlock Profile Visitors 🔒',
+                    'Upgrade to Gold or Platinum to see who viewed your profile, unlock contact details, and send unlimited interests.',
+                    [
+                      { text: 'Later', style: 'cancel' },
+                      {
+                        text: 'View VIP Plans',
+                        onPress: () => navigation.navigate('Membership'),
+                      },
+                    ],
+                  );
+                } else {
+                  navigation.navigate('ProfileDetail', { profileId: item.id });
+                }
+              }}
+              activeOpacity={0.8}
             >
-              <AuthImage source={{ uri: item.photo }} style={styles.photo} />
+              <View style={styles.photoContainer}>
+                <AuthImage
+                  source={{ uri: item.photo }}
+                  style={[styles.photo, isLocked && styles.photoBlurred]}
+                  blurRadius={isLocked ? 18 : 0}
+                />
+                {isLocked && (
+                  <View style={styles.lockBadgeOverlay}>
+                    <Icon name="lock-closed" size={14} color="#FFF" />
+                  </View>
+                )}
+              </View>
+
               <View style={styles.info}>
                 <View style={styles.nameRow}>
                   <Text style={styles.name} numberOfLines={1}>
-                    {item.name}
+                    {maskedName}
                   </Text>
                   <Text style={styles.timeAgo}>
                     {times[index % times.length]}
@@ -180,23 +226,40 @@ export default function VisitorsScreen({ navigation }: Props) {
                   </View>
                   {item.isVerified && (
                     <View style={styles.verifiedPill}>
+                      <Icon name="checkmark-circle" size={12} color="#2563EB" style={{ marginRight: 2 }} />
                       <Text style={styles.verifiedPillText}>Verified</Text>
+                    </View>
+                  )}
+                  {isLocked && (
+                    <View style={styles.vipOnlyPill}>
+                      <Text style={styles.vipOnlyPillText}>VIP Only</Text>
                     </View>
                   )}
                 </View>
               </View>
-              <TouchableOpacity
-                style={[
-                  styles.actionBtn,
-                  interest ? styles.actionBtnSent : null,
-                ]}
-                disabled={actionLoadingId === item.id}
-                onPress={() => handleToggleInterest(item)}
-              >
-                <Text style={styles.actionBtnText}>
-                  {interest ? 'Unsend' : 'Like'}
-                </Text>
-              </TouchableOpacity>
+
+              {isLocked ? (
+                <TouchableOpacity
+                  style={styles.unlockBtn}
+                  onPress={() => navigation.navigate('Membership')}
+                >
+                  <Icon name="lock-open-outline" size={12} color="#FFF" style={{ marginRight: 3 }} />
+                  <Text style={styles.unlockBtnText}>Unlock</Text>
+                </TouchableOpacity>
+              ) : (
+                <TouchableOpacity
+                  style={[
+                    styles.actionBtn,
+                    interest ? styles.actionBtnSent : null,
+                  ]}
+                  disabled={actionLoadingId === item.id}
+                  onPress={() => handleToggleInterest(item)}
+                >
+                  <Text style={styles.actionBtnText}>
+                    {interest ? 'Unsend' : 'Like'}
+                  </Text>
+                </TouchableOpacity>
+              )}
             </TouchableOpacity>
           );
         }}
@@ -224,42 +287,89 @@ const styles = StyleSheet.create({
     fontWeight: '500',
   },
   vipBanner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#FFF9EB',
     marginHorizontal: spacing.md,
     marginVertical: spacing.sm,
-    padding: spacing.md,
-    borderRadius: radii.lg,
-    borderWidth: 1,
-    borderColor: '#FDE68A',
+    borderRadius: radii.xl,
+    overflow: 'hidden',
+    ...shadow.sm,
   },
-  vipIcon: {
-    fontSize: 24,
-    marginRight: spacing.sm,
+  vipGradient: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: spacing.md,
   },
   vipTexts: {
     flex: 1,
   },
   vipTitle: {
-    fontSize: fontSizes.xs + 1,
+    fontSize: fontSizes.sm,
     fontWeight: '800',
-    color: '#92400E',
+    color: colors.white,
   },
   vipSubtitle: {
-    fontSize: 10,
-    color: '#B45309',
-    marginTop: 1,
+    fontSize: 11,
+    color: 'rgba(255, 255, 255, 0.9)',
+    marginTop: 2,
+    lineHeight: 15,
   },
   vipBtn: {
-    minHeight: 48,
+    minHeight: 38,
     justifyContent: 'center',
-    backgroundColor: '#D97706',
-    paddingHorizontal: spacing.sm + 2,
+    backgroundColor: colors.white,
+    paddingHorizontal: spacing.md,
     paddingVertical: 6,
     borderRadius: radii.pill,
+    marginLeft: spacing.sm,
+    ...shadow.sm,
   },
   vipBtnText: {
+    color: '#D97706',
+    fontSize: fontSizes.xs,
+    fontWeight: '800',
+  },
+  cardLocked: {
+    backgroundColor: '#FAFAFA',
+    borderColor: '#E2E8F0',
+  },
+  photoContainer: {
+    position: 'relative',
+  },
+  photoBlurred: {
+    opacity: 0.6,
+  },
+  lockBadgeOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(0, 0, 0, 0.35)',
+    borderRadius: radii.md,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  vipOnlyPill: {
+    backgroundColor: '#FEF3C7',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: radii.sm,
+  },
+  vipOnlyPillText: {
+    fontSize: 9,
+    fontWeight: '800',
+    color: '#D97706',
+  },
+  unlockBtn: {
+    minHeight: 40,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#D97706',
+    paddingHorizontal: spacing.sm + 4,
+    paddingVertical: 8,
+    borderRadius: radii.pill,
+  },
+  unlockBtnText: {
     color: colors.white,
     fontSize: fontSizes.xs,
     fontWeight: '800',

@@ -8,6 +8,7 @@ import { CompositeScreenProps, useFocusEffect } from '@react-navigation/native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import React, { useCallback, useState } from 'react';
 import {
+  Alert,
   FlatList,
   RefreshControl,
   ScrollView,
@@ -76,14 +77,14 @@ export default function ChatsListScreen({ navigation }: Props) {
 
   useFocusEffect(
     useCallback(() => {
-      refreshChats();
+      refreshChats().catch(() => {});
     }, [refreshChats]),
   );
 
   React.useEffect(() => {
     const { DeviceEventEmitter } = require('react-native');
     const sub = DeviceEventEmitter.addListener('REFRESH_CHATS', () => {
-      refreshChats();
+      refreshChats().catch(() => {});
     });
     return () => sub.remove();
   }, [refreshChats]);
@@ -243,7 +244,7 @@ export default function ChatsListScreen({ navigation }: Props) {
                 start={{ x: 0, y: 0 }}
                 end={{ x: 1, y: 1 }}
               />
-              <Icon name="sparkles" size={19} color="#FFFFFF" />
+              <Icon name="diamond" size={18} color="#FFFFFF" />
             </View>
 
             <View style={styles.premiumBannerTextWrap}>
@@ -408,14 +409,28 @@ export default function ChatsListScreen({ navigation }: Props) {
               isMuted={isMuted}
               preview={preview}
               formatTime={formatTime}
-              onPress={() =>
+              onPress={() => {
+                if (!isPremium) {
+                  Alert.alert(
+                    'Premium Required',
+                    'Chatting is reserved for Premium members. Upgrade to Gold or Elite to read and send messages.',
+                    [
+                      { text: 'Cancel', style: 'cancel' },
+                      {
+                        text: 'Upgrade to Gold',
+                        onPress: () => navigation.navigate('Membership'),
+                      },
+                    ],
+                  );
+                  return;
+                }
                 navigation.navigate('Chat', {
                   chatId: item.id,
                   otherProfileId: profile.id,
                   fallbackName: profile.name,
                   fallbackPhoto: profile.photo,
-                })
-              }
+                });
+              }}
             />
           );
         }}

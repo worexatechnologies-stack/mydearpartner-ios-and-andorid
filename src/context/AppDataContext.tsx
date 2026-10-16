@@ -568,15 +568,22 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
 
   const getOrCreateChatWith = useCallback(
     async (otherProfileId: string): Promise<Chat> => {
-      const existing = chats.find(
-        c =>
-          c.otherProfile?.id === otherProfileId ||
-          c.participantIds?.includes(otherProfileId),
-      );
-      if (existing) return existing;
-
       const profile = getProfileById(otherProfileId);
       const otherUserId = profile?.userId || undefined;
+
+      const chatList = chatsRef.current?.length ? chatsRef.current : chats;
+      const existing = chatList.find(
+        c =>
+          c.otherProfile?.id === otherProfileId ||
+          c.otherProfile?.userId === otherProfileId ||
+          c.participantIds?.includes(otherProfileId) ||
+          (otherUserId && (
+            c.otherProfile?.id === otherUserId ||
+            c.otherProfile?.userId === otherUserId ||
+            c.participantIds?.includes(otherUserId)
+          )),
+      );
+      if (existing) return existing;
 
       try {
         const newChat = await ChatService.getOrCreateChat(

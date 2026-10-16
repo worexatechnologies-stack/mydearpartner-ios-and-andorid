@@ -57,7 +57,7 @@ function SessionDataProvider({ children }: { children: React.ReactNode }) {
         if (typeof getCrashlytics === 'function') {
           getCrashlytics().setUserId(currentUser.id);
         }
-      } catch (err) {
+      } catch {
         // Crashlytics native module is optional in local debug builds
       }
       return startNotificationRealtime();

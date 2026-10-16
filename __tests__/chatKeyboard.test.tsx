@@ -28,6 +28,10 @@ jest.mock('../src/services/PresenceService', () => ({ subscribeToPresence: () =>
 jest.mock('../src/api/wsClient', () => ({ chatWsClient: { sendTyping: jest.fn() } }));
 jest.mock('../src/components/SafetyCenter', () => () => null);
 jest.mock('../src/components/AuthImage', () => () => null);
+let mockIsPremium = true;
+jest.mock('../src/utils/planAllowance', () => ({
+  usePlanAllowance: () => ({ isPremium: mockIsPremium }),
+}));
 
 test.each([false, true])('a forbidden send disables chat only when blocking is confirmed: %s', async blocked => {
   const sendMessage = useAppData().sendMessage as jest.Mock;
@@ -76,7 +80,7 @@ describe.each([
         tree = Renderer.create(<ChatScreen navigation={{ setOptions: jest.fn() } as any} route={{ params: { chatId: 'chat', otherProfileId: 'other' } } as any} />);
       });
       const input = () => tree.root.findByType(TextInput);
-      expect(tree.root.findByType(KeyboardAvoidingView).props.behavior).toBe(os === 'ios' ? 'padding' : 'height');
+      expect(tree.root.findByType(KeyboardAvoidingView).props.behavior).toBe(os === 'ios' ? 'padding' : undefined);
       act(() => input().props.onChangeText('Unsent draft'));
       act(() => handlers[Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow']());
       expect(input().props.value).toBe('Unsent draft');
@@ -111,5 +115,26 @@ test('a removed match disables the composer without treating it as a block', asy
     if (tree) await act(async () => tree.unmount());
     alert.mockRestore();
     send.mockClear();
+  }
+});
+
+test('free account without premium locks the chat composer and hides TextInput', async () => {
+  mockIsPremium = false;
+  let tree!: Renderer.ReactTestRenderer;
+  try {
+    await act(async () => {
+      tree = Renderer.create(
+        <ChatScreen
+          navigation={{ setOptions: jest.fn(), navigate: jest.fn() } as any}
+          route={{ params: { chatId: 'chat', otherProfileId: 'other' } } as any}
+        />,
+      );
+    });
+    expect(tree.root.findAllByType(TextInput)).toHaveLength(0);
+    const upgradeButton = tree.root.findByProps({ accessibilityLabel: 'Upgrade to Gold to unlock chat' });
+    expect(upgradeButton).toBeTruthy();
+  } finally {
+    mockIsPremium = true;
+    if (tree) await act(async () => tree.unmount());
   }
 });

@@ -500,11 +500,49 @@ export default function SearchScreen({ navigation, route }: Props) {
 
     // 1. If already mutually matched, navigate to chat
     if (rel.isMutual) {
-      const chat = await getOrCreateChatWith(profile.id);
-      navigation.navigate('Chat', {
-        chatId: chat.id,
-        otherProfileId: profile.id,
-      });
+      if (!allowance.isPremium) {
+        Alert.alert(
+          'Premium Required',
+          'Chatting is reserved for Premium members. Upgrade to Gold or Elite to start chatting.',
+          [
+            { text: 'Cancel', style: 'cancel' },
+            {
+              text: 'View Plans',
+              onPress: () => navigation.navigate('Membership'),
+            },
+          ],
+        );
+        return;
+      }
+      try {
+        const chat = await getOrCreateChatWith(profile.id);
+        navigation.navigate('Chat', {
+          chatId: chat.id,
+          otherProfileId: profile.id,
+        });
+      } catch (err: any) {
+        if (
+          err?.status === 403 ||
+          err?.isAuthError ||
+          err?.message?.toLowerCase().includes('permission') ||
+          err?.message?.toLowerCase().includes('plan') ||
+          err?.message?.toLowerCase().includes('upgrade')
+        ) {
+          Alert.alert(
+            'Direct Messaging',
+            'Direct messaging requires a mutual connection or an upgraded membership plan. Upgrade your plan to chat directly with verified matches!',
+            [
+              { text: 'Cancel', style: 'cancel' },
+              {
+                text: 'View Plans',
+                onPress: () => navigation.navigate('Membership'),
+              },
+            ],
+          );
+        } else {
+          Alert.alert('Notice', err?.message ?? 'Could not start conversation.');
+        }
+      }
       return;
     }
 
@@ -520,11 +558,49 @@ export default function SearchScreen({ navigation, route }: Props) {
             {
               text: 'Message',
               onPress: async () => {
-                const chat = await getOrCreateChatWith(profile.id);
-                navigation.navigate('Chat', {
-                  chatId: chat.id,
-                  otherProfileId: profile.id,
-                });
+                if (!allowance.isPremium) {
+                  Alert.alert(
+                    'Premium Required',
+                    'Chatting is reserved for Premium members. Upgrade to Gold or Elite to start chatting.',
+                    [
+                      { text: 'Cancel', style: 'cancel' },
+                      {
+                        text: 'View Plans',
+                        onPress: () => navigation.navigate('Membership'),
+                      },
+                    ],
+                  );
+                  return;
+                }
+                try {
+                  const chat = await getOrCreateChatWith(profile.id);
+                  navigation.navigate('Chat', {
+                    chatId: chat.id,
+                    otherProfileId: profile.id,
+                  });
+                } catch (err: any) {
+                  if (
+                    err?.status === 403 ||
+                    err?.isAuthError ||
+                    err?.message?.toLowerCase().includes('permission') ||
+                    err?.message?.toLowerCase().includes('plan') ||
+                    err?.message?.toLowerCase().includes('upgrade')
+                  ) {
+                    Alert.alert(
+                      'Direct Messaging',
+                      'Direct messaging requires a mutual connection or an upgraded membership plan. Upgrade your plan to chat directly!',
+                      [
+                        { text: 'Cancel', style: 'cancel' },
+                        {
+                          text: 'View Plans',
+                          onPress: () => navigation.navigate('Membership'),
+                        },
+                      ],
+                    );
+                  } else {
+                    Alert.alert('Notice', err?.message ?? 'Could not open chat.');
+                  }
+                }
               },
             },
           ],

@@ -48,6 +48,7 @@ export interface Profile {
   familyLocation?: string;
 
   // Matrimony Specific
+  photoPrivacy?: 'public' | 'accepted_only' | 'blurred';
   managedBy?: 'Self' | 'Parent' | 'Sibling' | 'Relative';
   verificationBadges?: ('id' | 'education' | 'employment')[];
   lifestyle?: {

@@ -28,6 +28,7 @@ import { useAuth } from '../context/AuthContext';
 import { PROFILE_PROMPTS, ProfilePrompt } from '../data/prompts';
 import { RootStackParamList } from '../navigation/types';
 import { getProfileChanges } from '../utils/profileChanges';
+import { COMPATIBLE_IMAGE_PICKER_OPTIONS } from '../utils/profilePhotos';
 
 if (
   Platform.OS === 'android' &&
@@ -200,11 +201,7 @@ export default function EditProfileScreen({ navigation }: Props) {
       return;
     }
     try {
-      const result = await launchImageLibrary({
-        mediaType: 'photo',
-        quality: 0.8,
-        selectionLimit: 1,
-      });
+      const result = await launchImageLibrary(COMPATIBLE_IMAGE_PICKER_OPTIONS);
       if (result.didCancel || !result.assets || result.assets.length === 0)
         return;
       const asset = result.assets[0];

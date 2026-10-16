@@ -23,6 +23,7 @@ type Props = NativeStackScreenProps<RootStackParamList, 'Verification'>;
 
 import { launchCamera, launchImageLibrary } from 'react-native-image-picker';
 import { verificationService } from '../../api/verificationService';
+import { COMPATIBLE_CAMERA_OPTIONS, COMPATIBLE_IMAGE_PICKER_OPTIONS } from '../../utils/profilePhotos';
 
 export default function VerificationScreen({ navigation }: Props) {
   const [idVerified, setIdVerified] = useState(false);
@@ -63,7 +64,7 @@ export default function VerificationScreen({ navigation }: Props) {
           text: 'Open Gallery',
           onPress: () => {
             launchImageLibrary(
-              { mediaType: 'photo', quality: 0.8 },
+              COMPATIBLE_IMAGE_PICKER_OPTIONS,
               async response => {
                 if (
                   response.didCancel ||
@@ -140,7 +141,7 @@ export default function VerificationScreen({ navigation }: Props) {
     setShowCamera(false);
     setIsProcessing(true);
     launchCamera(
-      { mediaType: 'photo', quality: 0.8, cameraType: 'front' },
+      COMPATIBLE_CAMERA_OPTIONS,
       async response => {
         if (
           response.didCancel ||

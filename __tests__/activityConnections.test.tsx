@@ -60,7 +60,7 @@ jest.mock('../src/context/AppDataContext', () => ({
   }),
 }));
 jest.mock('../src/utils/planAllowance', () => ({
-  usePlanAllowance: () => ({ interestsRemaining: 10, interestsLimit: 10 }),
+  usePlanAllowance: () => ({ isPremium: true, interestsRemaining: 10, interestsLimit: 10 }),
 }));
 jest.mock('../src/utils/haptics', () => ({ triggerHaptic: jest.fn() }));
 jest.mock('@react-navigation/native', () => ({

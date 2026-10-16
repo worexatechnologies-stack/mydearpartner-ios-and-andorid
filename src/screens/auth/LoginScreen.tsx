@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -22,6 +22,11 @@ import Icon from 'react-native-vector-icons/Ionicons';
 import { useAuth } from '../../context/AuthContext';
 import { AuthStackParamList } from '../../navigation/types';
 import { colors, spacing } from '../../theme/theme';
+import {
+  getSavedCredentials,
+  saveSavedCredentials,
+  clearSavedCredentials,
+} from '../../utils/credentialStorage';
 
 export default function LoginScreen() {
   const navigation =
@@ -31,10 +36,27 @@ export default function LoginScreen() {
   const { login } = useAuth();
 
   const submitting = useRef(false);
+  const passwordInputRef = useRef<any>(null);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+  const [saveCredentials, setSaveCredentials] = useState(true);
+  const [hasLoadedSaved, setHasLoadedSaved] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+
+  useEffect(() => {
+    let isMounted = true;
+    getSavedCredentials().then(saved => {
+      if (isMounted && saved) {
+        setEmail(saved.username);
+        setPassword(saved.password);
+        setHasLoadedSaved(true);
+      }
+    });
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   const handleLogin = async () => {
     if (submitting.current) return;
@@ -46,8 +68,15 @@ export default function LoginScreen() {
     setIsLoading(true);
     try {
       const result = await login(email.trim(), password);
-      if (!result.ok)
+      if (result.ok) {
+        if (saveCredentials) {
+          await saveSavedCredentials(email.trim(), password);
+        } else {
+          await clearSavedCredentials();
+        }
+      } else {
         Alert.alert('Login Failed', result.error || 'Invalid credentials');
+      }
     } catch {
       Alert.alert('Could not sign in', 'Check your connection and try again.');
     } finally {
@@ -187,6 +216,9 @@ export default function LoginScreen() {
                   autoCorrect={false}
                   textContentType="username"
                   autoComplete="username"
+                  importantForAutofill="yes"
+                  returnKeyType="next"
+                  onSubmitEditing={() => passwordInputRef.current?.focus()}
                   accessibilityLabel="Email or mobile number"
                   editable={!isLoading}
                 />
@@ -201,6 +233,7 @@ export default function LoginScreen() {
                   style={styles.inputIcon}
                 />
                 <TextInput
+                  ref={passwordInputRef}
                   style={styles.input}
                   placeholder="Password"
                   placeholderTextColor="rgba(255,255,255,0.3)"
@@ -211,6 +244,9 @@ export default function LoginScreen() {
                   autoCorrect={false}
                   textContentType="password"
                   autoComplete="current-password"
+                  importantForAutofill="yes"
+                  returnKeyType="go"
+                  onSubmitEditing={handleLogin}
                   accessibilityLabel="Password"
                   editable={!isLoading}
                 />
@@ -231,12 +267,40 @@ export default function LoginScreen() {
                 </Pressable>
               </View>
 
-              <Pressable
-                onPress={() => navigation.navigate('ForgotPassword')}
-                style={styles.forgotBtn}
-              >
-                <Text style={styles.forgotText}>Forgot password?</Text>
-              </Pressable>
+              {hasLoadedSaved && (
+                <View style={styles.savedChip}>
+                  <Icon name="shield-checkmark" size={14} color="#10B981" />
+                  <Text style={styles.savedChipText}>
+                    Autofill ready from {Platform.OS === 'ios' ? 'iCloud Keychain' : 'Google Password Saver'}
+                  </Text>
+                </View>
+              )}
+
+              <View style={styles.authOptionsRow}>
+                <Pressable
+                  accessibilityRole="checkbox"
+                  accessibilityState={{ checked: saveCredentials }}
+                  accessibilityLabel="Save credentials with Google Password Manager and Apple Keychain"
+                  onPress={() => setSaveCredentials(!saveCredentials)}
+                  style={styles.saveCredentialsBtn}
+                >
+                  <Icon
+                    name={saveCredentials ? 'checkbox' : 'square-outline'}
+                    size={18}
+                    color={saveCredentials ? '#FF1E66' : 'rgba(255,255,255,0.5)'}
+                  />
+                  <Text style={styles.saveCredentialsText}>
+                    Save with {Platform.OS === 'ios' ? 'iCloud Keychain' : 'Google Saver'}
+                  </Text>
+                </Pressable>
+
+                <Pressable
+                  onPress={() => navigation.navigate('ForgotPassword')}
+                  style={styles.forgotBtn}
+                >
+                  <Text style={styles.forgotText}>Forgot password?</Text>
+                </Pressable>
+              </View>
 
               {/* Glowing Sign In Button */}
               <Pressable
@@ -493,14 +557,48 @@ const styles = StyleSheet.create({
   eyeBtn: {
     padding: 8,
   },
+  savedChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    backgroundColor: 'rgba(16, 185, 129, 0.15)',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(16, 185, 129, 0.3)',
+    gap: 6,
+    marginTop: -4,
+  },
+  savedChipText: {
+    color: '#6EE7B7',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  authOptionsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 8,
+  },
+  saveCredentialsBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingVertical: 4,
+  },
+  saveCredentialsText: {
+    color: 'rgba(255, 255, 255, 0.75)',
+    fontSize: 13,
+    fontWeight: '500',
+  },
   forgotBtn: {
-    alignSelf: 'flex-end',
-    marginBottom: 12,
+    paddingVertical: 4,
   },
   forgotText: {
     color: 'rgba(255, 255, 255, 0.6)',
     fontWeight: '600',
-    fontSize: 14,
+    fontSize: 13,
   },
   primaryBtnWrap: {
     borderRadius: 20,

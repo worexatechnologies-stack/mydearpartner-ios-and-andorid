@@ -24,7 +24,7 @@ jest.mock('../src/context/AuthContext', () => ({
   useAuth: () => ({ currentUser: { profile: { id: 'me', name: 'Me', interests: [] } } }),
 }));
 jest.mock('../src/utils/planAllowance', () => ({
-  usePlanAllowance: () => ({ isInterestsExhausted: true }),
+  usePlanAllowance: () => ({ isPremium: true, isInterestsExhausted: true }),
 }));
 jest.mock('../src/utils/haptics', () => ({ triggerHaptic: jest.fn() }));
 jest.mock('../src/utils/compatibility', () => ({ computeCompatibilityScore: () => 90 }));

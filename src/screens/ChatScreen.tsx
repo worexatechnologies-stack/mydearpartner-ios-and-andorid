@@ -217,9 +217,19 @@ export default function ChatScreen({ route, navigation }: Props) {
   const insets = useSafeAreaInsets();
   const [keyboardVisible, setKeyboardVisible] = useState(Keyboard.isVisible());
   useEffect(() => {
-    const show = Keyboard.addListener(Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow', () => setKeyboardVisible(true));
-    const hide = Keyboard.addListener(Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide', () => setKeyboardVisible(false));
-    return () => { show.remove(); hide.remove(); };
+    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const show = Keyboard.addListener(showEvent, () => {
+      setKeyboardVisible(true);
+      setTimeout(() => {
+        listRef.current?.scrollToEnd({ animated: true });
+      }, 100);
+    });
+    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+    const hide = Keyboard.addListener(hideEvent, () => setKeyboardVisible(false));
+    return () => {
+      show.remove();
+      hide.remove();
+    };
   }, []);
 
   const otherProfile = getProfileById(otherProfileId);
@@ -243,7 +253,7 @@ export default function ChatScreen({ route, navigation }: Props) {
   const isMuted = isUserMuted(otherProfileId) || isUserMuted(chatId);
   // Either side blocked = disable chat
   const connectionClosed = matchRemoved || !!chats?.find(chat => String(chat.id) === String(chatId))?.connectionClosed;
-  const chatDisabled = iBlocked || blockedByThem || connectionClosed;
+  const chatDisabled = iBlocked || blockedByThem || connectionClosed || !isPremium;
   useEffect(() => {
     if (connectionClosed) {
       setComposerPanel(null);
@@ -335,6 +345,7 @@ export default function ChatScreen({ route, navigation }: Props) {
   };
 
   const signalTyping = () => {
+    if (!isPremium) return;
     chatWsClient.sendTyping(true);
     
     if (typingTimerRef.current) clearTimeout(typingTimerRef.current);
@@ -368,6 +379,21 @@ export default function ChatScreen({ route, navigation }: Props) {
   const sendContent = async (content: string, restoreTextOnFailure = false) => {
     const toSend = content.trim();
     if (!toSend || sending || chatDisabled) return;
+
+    if (!isPremium) {
+      Alert.alert(
+        'Premium Required',
+        'Chatting is reserved for Premium members. Upgrade to Gold or Elite to start chatting.',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Upgrade to Gold',
+            onPress: () => navigation.navigate('Membership'),
+          },
+        ],
+      );
+      return;
+    }
 
     stopTyping();
     triggerHaptic(parseStickerMessage(toSend) ? 'medium' : 'light');
@@ -480,7 +506,8 @@ export default function ChatScreen({ route, navigation }: Props) {
   return (
     <KeyboardAvoidingView 
       style={[styles.root, { paddingLeft: insets.left, paddingRight: insets.right }]}
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}
     >
       <StatusBar barStyle="light-content" />
 
@@ -588,7 +615,7 @@ export default function ChatScreen({ route, navigation }: Props) {
           onPress={() => navigation.navigate('Membership')}
           activeOpacity={0.85}
         >
-          <Icon name="sparkles" size={16} color="#F59E0B" style={{ marginRight: 8 }} />
+          <Icon name="diamond" size={15} color="#F59E0B" style={{ marginRight: 8 }} />
           <Text style={styles.premiumBannerText}>
             Chats locked • Free Account. <Text style={{ fontWeight: '800', textDecorationLine: 'underline' }}>Tap to upgrade</Text> and send messages.
           </Text>
@@ -705,7 +732,43 @@ export default function ChatScreen({ route, navigation }: Props) {
           />
         )}
 
-        {chatDisabled ? (
+        {!isPremium ? (
+          <View style={[styles.lockedInputBar, { paddingBottom: Math.max(insets.bottom, 14) }]}>
+            <TouchableOpacity
+              style={styles.lockedUpgradeCard}
+              onPress={() => {
+                triggerHaptic('light');
+                navigation.navigate('Membership');
+              }}
+              activeOpacity={0.88}
+              accessibilityRole="button"
+              accessibilityLabel="Upgrade to Gold to unlock chat"
+            >
+              <View style={styles.lockedUpgradeInner}>
+                <View style={styles.lockedIconCircle}>
+                  <Icon name="lock-closed" size={18} color="#FFFFFF" />
+                </View>
+
+                <View style={styles.lockedTextWrap}>
+                  <View style={styles.lockedHeaderRow}>
+                    <Text style={styles.lockedTitle}>Chats locked</Text>
+                    <View style={styles.lockedBadge}>
+                      <Text style={styles.lockedBadgeText}>FREE ACCOUNT</Text>
+                    </View>
+                  </View>
+                  <Text style={styles.lockedSubtitle} numberOfLines={2}>
+                    Upgrade to Gold or Elite to chat with {displayName.split(' ')[0]}.
+                  </Text>
+                </View>
+
+                <View style={styles.lockedCtaPill}>
+                  <Text style={styles.lockedCtaText}>Upgrade</Text>
+                  <Icon name="chevron-forward" size={13} color="#FFF" />
+                </View>
+              </View>
+            </TouchableOpacity>
+          </View>
+        ) : chatDisabled ? (
           <View style={[styles.blockedInputBar, { paddingBottom: Math.max(insets.bottom, 12) }]}>
             <Icon name="lock-closed-outline" size={18} color="#FF5C97" style={{ marginRight: 8 }} />
             <Text style={styles.blockedInputText}>
@@ -714,23 +777,10 @@ export default function ChatScreen({ route, navigation }: Props) {
           </View>
         ) : (
           <View style={[styles.inputBar, { paddingBottom: keyboardVisible ? 8 : Math.max(insets.bottom, 8) }]}>
-            {!isPremium && (
-              <TouchableOpacity
-                style={styles.premiumHintRow}
-                onPress={() => navigation.navigate('Membership')}
-                activeOpacity={0.8}
-              >
-                <Icon name="star" size={13} color="#F59E0B" style={{ marginRight: 6 }} />
-                <Text style={styles.premiumHintText} numberOfLines={1}>
-                  Chats locked • Free Account. <Text style={{ fontWeight: '700', textDecorationLine: 'underline' }}>Upgrade to Gold</Text> to send messages.
-                </Text>
-                <Icon name="chevron-forward" size={12} color="#F59E0B" />
-              </TouchableOpacity>
-            )}
             {messages.length <= 4 && !text.trim() && (
               <View style={styles.icebreakersWrapper}>
                 <View style={styles.icebreakerHeader}>
-                  <Icon name="sparkles" size={13} color="#FF5C97" style={{ marginRight: 4 }} />
+                  <Icon name="chatbubble-ellipses-outline" size={14} color="#FF5C97" style={{ marginRight: 4 }} />
                   <Text style={styles.icebreakerTitle}>Suggested Icebreakers</Text>
                 </View>
                 <ScrollView
@@ -740,7 +790,7 @@ export default function ChatScreen({ route, navigation }: Props) {
                 >
                   {[
                     '👋 Hi! What are your favorite weekend hobbies?',
-                    "✨ Loved your profile! What's your dream travel spot?",
+                    "Loved your profile! What's your dream travel spot?",
                     '☕ Coffee or Chai? How do you start your day?',
                     '🎬 Any good movie or show recommendations lately?',
                     '💍 What values matter most to you in a life partner?',
@@ -994,5 +1044,83 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: '#FCE7F3',
     fontWeight: '500',
+  },
+  lockedInputBar: {
+    paddingHorizontal: 16,
+    paddingTop: 10,
+    backgroundColor: '#10050d',
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(255, 255, 255, 0.08)',
+  },
+  lockedUpgradeCard: {
+    borderRadius: 16,
+    overflow: 'hidden',
+    borderWidth: 1.5,
+    borderColor: '#D97706',
+    backgroundColor: '#260D1E',
+  },
+  lockedUpgradeInner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+  },
+  lockedIconCircle: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: '#D97706',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
+  },
+  lockedTextWrap: {
+    flex: 1,
+    justifyContent: 'center',
+    marginRight: 10,
+  },
+  lockedHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 3,
+  },
+  lockedTitle: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#FFF',
+    marginRight: 6,
+  },
+  lockedBadge: {
+    backgroundColor: 'rgba(245, 158, 11, 0.25)',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: 'rgba(245, 158, 11, 0.5)',
+  },
+  lockedBadgeText: {
+    fontSize: 9,
+    fontWeight: '800',
+    color: '#FBBF24',
+    letterSpacing: 0.6,
+  },
+  lockedSubtitle: {
+    fontSize: 11,
+    color: 'rgba(255, 255, 255, 0.75)',
+    lineHeight: 15,
+  },
+  lockedCtaPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FF2A7A',
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 18,
+  },
+  lockedCtaText: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: '#FFF',
+    marginRight: 2,
   },
 });

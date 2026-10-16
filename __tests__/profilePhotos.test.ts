@@ -34,3 +34,32 @@ test('incomplete gallery records cannot silently erase the displayed gallery', a
   (get as jest.Mock).mockResolvedValue({ photos: [{ image_url: '/photo.jpg' }] });
   await expect(getMyPhotos()).rejects.toThrow('incomplete photo records');
 });
+
+test('iPhone HEIC and HEIF photos are sanitized to JPEG format for universal compatibility', async () => {
+  const { sanitizePhotoUpload } = require('../src/utils/profilePhotos');
+  expect(sanitizePhotoUpload('IMG_4821.HEIC', 'image/heic')).toEqual({
+    fileName: 'IMG_4821.jpg',
+    mimeType: 'image/jpeg',
+  });
+  expect(sanitizePhotoUpload('portrait.heif', 'image/heif')).toEqual({
+    fileName: 'portrait.jpg',
+    mimeType: 'image/jpeg',
+  });
+  expect(sanitizePhotoUpload('photo-no-ext', 'image/jpeg')).toEqual({
+    fileName: 'photo-no-ext.jpg',
+    mimeType: 'image/jpeg',
+  });
+
+  (upload as jest.Mock).mockResolvedValue(photo);
+  await expect(uploadPhoto('file:///IMG_1001.HEIC', 'IMG_1001.HEIC', 'image/heic')).resolves.toEqual({
+    id: 'photo-id',
+    uri,
+    isPrimary: true,
+  });
+  expect(upload).toHaveBeenCalledWith(
+    '/profile-photos/',
+    expect.any(FormData),
+    'POST',
+  );
+});
+

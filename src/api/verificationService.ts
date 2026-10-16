@@ -21,9 +21,12 @@ async function getStatus(): Promise<VerificationStatus> {
   };
 }
 
+import { sanitizePhotoUpload } from '../utils/profilePhotos';
+
 async function submit(type: string, uri: string, name: string, mime: string, customName?: string): Promise<VerificationStatus> {
+  const { fileName: safeName, mimeType: safeMime } = sanitizePhotoUpload(name, mime);
   const data = new FormData();
-  data.append('file', { uri, name, type: mime } as any);
+  data.append('file', { uri, name: safeName, type: safeMime } as any);
   data.append('document_type', type);
   if (customName) data.append('custom_document_name', customName);
   const saved = await upload<Document>(DOCUMENTS_URL, data);

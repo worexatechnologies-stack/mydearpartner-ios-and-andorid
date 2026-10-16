@@ -15,6 +15,7 @@ export const settingsService = {
 export interface PrivacySettings {
   show_online_status: boolean;
   contact_visibility: 'everyone' | 'matches' | 'none';
+  photo_visibility?: 'everyone' | 'matches' | 'blurred';
 }
 
 export const privacySettingsService = {

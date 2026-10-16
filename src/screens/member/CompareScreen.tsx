@@ -66,6 +66,20 @@ export default function CompareScreen({ route, navigation }: Props) {
     setIsSending(true);
     try {
       if (relationship?.isMutual) {
+        if (!allowance.isPremium) {
+          Alert.alert(
+            'Premium Required',
+            'Chatting is reserved for Premium members. Upgrade to Gold or Elite to start chatting.',
+            [
+              { text: 'Cancel', style: 'cancel' },
+              {
+                text: 'View Plans',
+                onPress: () => navigation.navigate('Membership'),
+              },
+            ],
+          );
+          return;
+        }
         const chat = await getOrCreateChatWith(candidate.id);
         navigation.navigate('Chat', {
           chatId: chat.id,
@@ -135,6 +149,24 @@ export default function CompareScreen({ route, navigation }: Props) {
             { text: 'Cancel', style: 'cancel' },
             {
               text: 'Upgrade Plan',
+              onPress: () => navigation.navigate('Membership'),
+            },
+          ],
+        );
+      } else if (
+        err?.status === 403 ||
+        err?.isAuthError ||
+        err?.message?.toLowerCase().includes('permission') ||
+        err?.message?.toLowerCase().includes('plan') ||
+        err?.message?.toLowerCase().includes('upgrade')
+      ) {
+        Alert.alert(
+          'Direct Messaging',
+          'Direct messaging requires a mutual connection or an upgraded membership plan. Upgrade your plan to chat directly with verified matches!',
+          [
+            { text: 'Cancel', style: 'cancel' },
+            {
+              text: 'View Plans',
               onPress: () => navigation.navigate('Membership'),
             },
           ],

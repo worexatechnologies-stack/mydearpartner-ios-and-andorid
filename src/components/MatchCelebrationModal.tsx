@@ -80,7 +80,7 @@ export default function MatchCelebrationModal({
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 1 }}
           >
-            <Icon name={isMutual ? 'sparkles' : 'heart'} size={32} color="#FFF" />
+            <Icon name="heart" size={32} color="#FFF" />
           </LinearGradient>
 
           {/* Avatar Ring */}
@@ -138,7 +138,7 @@ export default function MatchCelebrationModal({
               onPress={onClose}
               activeOpacity={0.8}
             >
-              <Text style={styles.secondaryBtnText}>Keep Exploring ✨</Text>
+              <Text style={styles.secondaryBtnText}>Keep Exploring</Text>
             </TouchableOpacity>
           </View>
         </Animated.View>

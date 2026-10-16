@@ -14,7 +14,7 @@
  */
 
 import { Profile } from '../types/models';
-import { ProfilePhotoRecord,normalizeProfilePhoto,resolveProfilePhotoUrl } from '../utils/profilePhotos';
+import { ProfilePhotoRecord, normalizeProfilePhoto, resolveProfilePhotoUrl, sanitizePhotoUpload } from '../utils/profilePhotos';
 import { del,get,patch,upload } from './apiClient';
 import { BackendProfile,ProfileUpdatePayload,SearchFilters } from './types';
 
@@ -281,11 +281,16 @@ export async function uploadPhoto(
     normalizedUri = `file://${normalizedUri}`;
   }
 
+  const { fileName: safeFileName, mimeType: safeMimeType } = sanitizePhotoUpload(
+    fileName,
+    mimeType,
+  );
+
   const formData = new FormData();
   formData.append('photo', {
     uri: normalizedUri,
-    name: fileName,
-    type: mimeType,
+    name: safeFileName,
+    type: safeMimeType,
   } as any);
 
   const data = await upload<unknown>(

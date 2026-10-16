@@ -37,7 +37,8 @@ export default function ProfileSetupScreen() {
     if (uploadingPhoto) return;
     try {
       const { launchImageLibrary } = require('react-native-image-picker');
-      const result = await launchImageLibrary({ mediaType: 'photo', quality: 0.8, selectionLimit: 1 });
+      const { COMPATIBLE_IMAGE_PICKER_OPTIONS } = require('../utils/profilePhotos');
+      const result = await launchImageLibrary(COMPATIBLE_IMAGE_PICKER_OPTIONS);
       if (result.didCancel || !result.assets || result.assets.length === 0) return;
       
       const asset = result.assets[0];
@@ -47,7 +48,7 @@ export default function ProfileSetupScreen() {
       setError('');
       try {
         const ProfileService = require('../api/profileService');
-        await ProfileService.uploadPhoto(asset.uri, asset.fileName || `photo-${Date.now()}.jpg`, asset.type || 'image/jpeg');
+        await ProfileService.uploadPhoto(asset.uri, asset.fileName, asset.type);
         setPhotoUri(asset.uri);
       } catch (err: any) {
         setError(err?.message || 'Failed to upload photo.');

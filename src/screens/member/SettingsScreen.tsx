@@ -248,7 +248,7 @@ export default function SettingsScreen({ navigation }: Props) {
               </Text>
               <Text style={styles.heroPlan}>
                 {currentUser?.isPremium ? 'Premium member' : 'Free member'} ·
-                v30.0
+                v0.3.2
               </Text>
             </View>
           </View>
@@ -281,6 +281,15 @@ export default function SettingsScreen({ navigation }: Props) {
                 value={privacy.contact_visibility !== 'everyone'}
                 disabled={!privacyReady}
                 onChange={v => updatePrivacy('contact_visibility', v ? 'matches' : 'everyone')}
+              />
+              <ToggleRow
+                icon="images-outline"
+                color="#EC4899"
+                title="Photo privacy protection"
+                description="Blur photos until interest is mutually accepted"
+                value={privacy.photo_visibility === 'matches'}
+                disabled={!privacyReady}
+                onChange={v => updatePrivacy('photo_visibility', v ? 'matches' : 'everyone')}
               />
               <ToggleRow
                 icon="radio-outline"
@@ -371,7 +380,7 @@ export default function SettingsScreen({ navigation }: Props) {
             </Section>
           </>
         )}
-        <Text style={styles.version}>MY DEAR PARTNER · VERSION 30.0.0</Text>
+        <Text style={styles.version}>MY DEAR PARTNER · VERSION 0.3.2</Text>
       </ScrollView>
       <SafetyCenter page={safetyPage} onClose={() => setSafetyPage(null)} />
     </ScreenContainer>

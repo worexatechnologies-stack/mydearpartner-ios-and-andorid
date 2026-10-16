@@ -28,6 +28,7 @@ import { useAuth } from '../../context/AuthContext';
 import { AuthStackParamList } from '../../navigation/types';
 import { colors, spacing, radii, typeScale } from '../../theme/theme';
 import { adultDateOfBirth } from '../../utils/ageEligibility';
+import { saveSavedCredentials } from '../../utils/credentialStorage';
 
 const PROFILE_FOR_OPTIONS = [
   { label: 'Myself', value: 'Self' },
@@ -174,7 +175,11 @@ export default function SignupScreen() {
         city: city.trim(),
         gender: gender,
       });
-      if (!result.ok) Alert.alert('Could not create account', result.error || 'Please try again.');
+      if (result.ok) {
+        await saveSavedCredentials(email.trim(), password).catch(() => {});
+      } else {
+        Alert.alert('Could not create account', result.error || 'Please try again.');
+      }
     } finally {
       submitting.current = false;
       setIsLoading(false);
@@ -293,7 +298,11 @@ export default function SignupScreen() {
               onChangeText={setEmail}
               keyboardType="email-address"
               autoCapitalize="none"
+              autoCorrect={false}
               textContentType="emailAddress"
+              autoComplete="email"
+              importantForAutofill="yes"
+              returnKeyType="next"
               editable={!isLoading}
             />
 
@@ -318,6 +327,9 @@ export default function SignupScreen() {
               value={phone}
               onChangeText={setPhone}
               keyboardType="phone-pad"
+              textContentType="telephoneNumber"
+              autoComplete="tel"
+              importantForAutofill="yes"
               maxLength={10}
               editable={!isLoading}
               rightElement={<Text style={styles.phonePrefix}>+91</Text>}
@@ -338,6 +350,8 @@ export default function SignupScreen() {
               onChangeText={setCity}
               autoCapitalize="words"
               textContentType="addressCity"
+              autoComplete="postal-address-locality"
+              importantForAutofill="yes"
               editable={!isLoading}
             />
 
@@ -348,6 +362,11 @@ export default function SignupScreen() {
               onChangeText={setPassword}
               secureTextEntry={!showPassword}
               autoCapitalize="none"
+              autoCorrect={false}
+              textContentType="newPassword"
+              autoComplete="password-new"
+              importantForAutofill="yes"
+              returnKeyType="done"
               editable={!isLoading}
               rightElement={
                 <Pressable onPress={() => setShowPassword(!showPassword)} style={{ padding: 8 }}>

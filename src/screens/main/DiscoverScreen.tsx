@@ -18,6 +18,7 @@ import {
   StatusBar,
   ScrollView,
   Image,
+  Alert,
 } from 'react-native';
 import LinearGradient from 'react-native-linear-gradient';
 import {
@@ -37,6 +38,7 @@ import {
 import { useAppData } from '../../context/AppDataContext';
 import { MainTabParamList, RootStackParamList } from '../../navigation/types';
 import { usePlanAllowance } from '../../utils/planAllowance';
+import { isInterestQuotaError } from '../../utils/interestErrors';
 import AuthImage from '../../components/AuthImage';
 import ProfileCardSkeleton from '../../components/ProfileCardSkeleton';
 import MatchCelebrationModal from '../../components/MatchCelebrationModal';
@@ -317,14 +319,29 @@ export default function DiscoverScreen({ navigation }: Props) {
                 <ProfileFeedCard
                   profile={item}
                   navigation={navigation}
-                  onSendInterest={() => {
+                  onSendInterest={async () => {
                     triggerHaptic('success');
-                    sendInterest(item.id, item.userId);
-                    setCelebration({
-                      visible: true,
-                      name: item.name || 'your match',
-                      avatarUrl: item.photo || item.photos?.[0],
-                    });
+                    try {
+                      await sendInterest(item.id, item.userId);
+                      setCelebration({
+                        visible: true,
+                        name: item.name || 'your match',
+                        avatarUrl: item.photo || item.photos?.[0],
+                      });
+                    } catch (err: any) {
+                      if (isInterestQuotaError(err)) {
+                        Alert.alert(
+                          'Daily Interest Limit Reached',
+                          err?.message || 'You have reached your daily interest limit. Upgrade your plan to send more interests!',
+                          [
+                            { text: 'Cancel', style: 'cancel' },
+                            { text: 'Upgrade Plan', onPress: () => navigation.navigate('Membership') },
+                          ],
+                        );
+                      } else {
+                        Alert.alert('Notice', err?.message ?? 'Could not send interest.');
+                      }
+                    }
                   }}
                   onSkip={() => {
                     triggerHaptic('light');

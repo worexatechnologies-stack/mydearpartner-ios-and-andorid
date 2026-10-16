@@ -6,19 +6,12 @@ import {
   useWindowDimensions,
   StatusBar,
   Platform,
-} from 'react-native';
-import Animated, {
-  useSharedValue,
-  useAnimatedStyle,
-  withTiming,
-  withSpring,
-  withDelay,
+  Animated,
   Easing,
-  runOnJS,
-} from 'react-native-reanimated';
-import { SafeAreaView } from 'react-native-safe-area-context';
+} from 'react-native';
+import LinearGradient from 'react-native-linear-gradient';
 import { LogoMark } from '../components/LogoMark';
-import { colors } from '../theme/theme';
+import { useReducedMotion } from '../hooks/useReducedMotion';
 
 interface Props {
   onComplete?: () => void;
@@ -27,155 +20,241 @@ interface Props {
 export default function SplashScreen({ onComplete }: Props) {
   const { width } = useWindowDimensions();
   const completionCalled = useRef(false);
+  const reducedMotion = useReducedMotion();
 
-  // Animation values
-  const logoOpacity = useSharedValue(0);
-  const logoTranslateY = useSharedValue(20);
-  
-  const textOpacity = useSharedValue(0);
-  const textTranslateY = useSharedValue(10);
-  
-  const barWidth = useSharedValue(0);
+  // All animation values (standard RN Animated — Jest-safe, no infinite loops)
+  const logoOpacity = useRef(new Animated.Value(0)).current;
+  const logoScale = useRef(new Animated.Value(0.82)).current;
+
+  const textOpacity = useRef(new Animated.Value(0)).current;
+  const textTranslateY = useRef(new Animated.Value(10)).current;
+
+  const subtitleOpacity = useRef(new Animated.Value(0)).current;
+
+  const progressBar = useRef(new Animated.Value(0)).current;
 
   const finishSplash = () => {
-    if (!completionCalled.current && onComplete) {
+    if (!completionCalled.current) {
       completionCalled.current = true;
-      onComplete();
+      onComplete?.();
     }
   };
 
   useEffect(() => {
-    // 1. Logo Reveal (Fade in and slide up slightly)
-    logoOpacity.value = withTiming(1, { duration: 800, easing: Easing.out(Easing.ease) });
-    logoTranslateY.value = withSpring(0, { damping: 15, stiffness: 100 });
+    if (reducedMotion) {
+      logoOpacity.setValue(1);
+      logoScale.setValue(1);
+      textOpacity.setValue(1);
+      textTranslateY.setValue(0);
+      subtitleOpacity.setValue(1);
+      progressBar.setValue(1);
+      const t = setTimeout(finishSplash, 400);
+      return () => clearTimeout(t);
+    }
 
-    // 2. Text Reveal
-    textOpacity.value = withDelay(
-      400,
-      withTiming(1, { duration: 600, easing: Easing.out(Easing.ease) })
-    );
-    textTranslateY.value = withDelay(
-      400,
-      withSpring(0, { damping: 15, stiffness: 100 })
-    );
+    // ── Orchestrated 3-stage animation (all finite, no loops) ──────────────
+    const seq = Animated.parallel([
+      // Stage 1 — Logo springs in (0 → 0.9 s)
+      Animated.parallel([
+        Animated.timing(logoOpacity, {
+          toValue: 1,
+          duration: 650,
+          easing: Easing.out(Easing.ease),
+          useNativeDriver: true,
+        }),
+        Animated.spring(logoScale, {
+          toValue: 1,
+          tension: 80,
+          friction: 7,
+          useNativeDriver: true,
+        }),
+      ]),
 
-    // 3. Straightforward Loading Bar
-    barWidth.value = withDelay(
-      600,
-      withTiming(100, { duration: 2500, easing: Easing.inOut(Easing.quad) }, (finished) => {
-        if (finished) {
-          runOnJS(finishSplash)();
-        }
-      })
-    );
-    
-    // Safety fallback
-    const timer = setTimeout(finishSplash, 3500);
-    return () => clearTimeout(timer);
-  }, []);
+      // Stage 2 — Brand name slides up (0.5 → 1.2 s)
+      Animated.sequence([
+        Animated.delay(500),
+        Animated.parallel([
+          Animated.timing(textOpacity, {
+            toValue: 1,
+            duration: 550,
+            easing: Easing.out(Easing.ease),
+            useNativeDriver: true,
+          }),
+          Animated.spring(textTranslateY, {
+            toValue: 0,
+            tension: 80,
+            friction: 7,
+            useNativeDriver: true,
+          }),
+        ]),
+      ]),
 
-  const logoStyle = useAnimatedStyle(() => ({
-    opacity: logoOpacity.value,
-    transform: [{ translateY: logoTranslateY.value }],
-  }));
+      // Stage 3 — Subtitle fades in (0.9 → 1.5 s)
+      Animated.sequence([
+        Animated.delay(900),
+        Animated.timing(subtitleOpacity, {
+          toValue: 1,
+          duration: 500,
+          easing: Easing.out(Easing.ease),
+          useNativeDriver: true,
+        }),
+      ]),
 
-  const textStyle = useAnimatedStyle(() => ({
-    opacity: textOpacity.value,
-    transform: [{ translateY: textTranslateY.value }],
-  }));
+      // Stage 4 — Progress bar fills (0.3 → 3.2 s)
+      Animated.sequence([
+        Animated.delay(300),
+        Animated.timing(progressBar, {
+          toValue: 1,
+          duration: 2800,
+          easing: Easing.inOut(Easing.quad),
+          useNativeDriver: false,
+        }),
+      ]),
+    ]);
 
-  const progressStyle = useAnimatedStyle(() => ({
-    width: `${barWidth.value}%`,
-  }));
+    seq.start(({ finished }) => {
+      if (finished) finishSplash();
+    });
 
-  const maxBarWidth = Math.min(width * 0.6, 280);
+    const fallback = setTimeout(finishSplash, 3600);
+    return () => {
+      seq.stop();
+      clearTimeout(fallback);
+    };
+  }, [
+    reducedMotion,
+    logoOpacity,
+    logoScale,
+    textOpacity,
+    textTranslateY,
+    subtitleOpacity,
+    progressBar,
+  ]);
+
+  const barTrackWidth = Math.min(width * 0.72, 280);
+  const fillWidth = progressBar.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0, barTrackWidth],
+  });
 
   return (
     <View style={styles.screen}>
-      <StatusBar barStyle="dark-content" />
+      <StatusBar
+        barStyle="dark-content"
+        {...(Platform.OS === 'android' ? ({ backgroundColor: '#FFFFFF' } as any) : {})}
+      />
 
-      {/* Main Content Center */}
-      <View style={styles.content}>
-        
-        {/* Simple Logo Reveal */}
-        <Animated.View style={[styles.logoContainer, logoStyle]}>
-          <LogoMark size={90} />
+      {/* Center Brand Group */}
+      <View style={styles.centerContainer}>
+
+        {/* dp Monogram Logo */}
+        <Animated.View
+          style={[
+            styles.logoWrap,
+            {
+              opacity: logoOpacity,
+              transform: [{ scale: logoScale }],
+            },
+          ]}
+        >
+          <LogoMark size={130} />
         </Animated.View>
 
-        {/* Professional Typography */}
-        <Animated.View style={[styles.textGroup, textStyle]}>
-          <Text style={styles.wordmark}>
-            MyDear<Text style={styles.brandColor}>Partner</Text>
-          </Text>
-          <Text style={styles.tagline}>
-            TRUSTED MATCHMAKING
+        {/* MyDearPartner wordmark */}
+        <Animated.View
+          style={[
+            styles.brandRow,
+            {
+              opacity: textOpacity,
+              transform: [{ translateY: textTranslateY }],
+            },
+          ]}
+        >
+          <Text style={styles.brandTitle}>
+            {'MyDear'}
+            <Text style={styles.brandPartner}>{'Partner'}</Text>
           </Text>
         </Animated.View>
 
+        {/* TRUSTED MATCHMAKING */}
+        <Animated.Text
+          style={[styles.subtitle, { opacity: subtitleOpacity }]}
+        >
+          {'TRUSTED MATCHMAKING'}
+        </Animated.Text>
       </View>
 
-      {/* Elegant Loading Bar at the bottom */}
-      <SafeAreaView edges={['bottom']} style={styles.footer}>
-        <View style={[styles.track, { width: maxBarWidth }]}>
-          <Animated.View style={[styles.fill, progressStyle]} />
-        </View>
-      </SafeAreaView>
+      {/* Bottom progress bar */}
+      <View style={[styles.progressTrack, { width: barTrackWidth }]}>
+        <Animated.View style={[styles.progressFill, { width: fillWidth }]}>
+          <LinearGradient
+            colors={['#C41048', '#E8527A']}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 0 }}
+            style={StyleSheet.absoluteFill}
+          />
+        </Animated.View>
+      </View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  screen: { 
-    flex: 1, 
+  screen: {
+    flex: 1,
     backgroundColor: '#FFFFFF',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  content: {
+  centerContainer: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingBottom: 40, // offset slightly to balance the footer
+    paddingBottom: 60,
   },
-  logoContainer: {
+  logoWrap: {
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 24,
+    marginBottom: 22,
+    // Subtle drop-shadow to lift the logo
+    shadowColor: '#C41048',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.10,
+    shadowRadius: 12,
+    elevation: 3,
   },
-  textGroup: {
+  brandRow: {
     alignItems: 'center',
+    marginBottom: 10,
   },
-  wordmark: {
+  brandTitle: {
     fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif',
-    fontWeight: '700',
-    fontSize: 32,
-    color: '#222222', // Dark, highly readable text
-    letterSpacing: -0.5,
+    fontSize: 34,
+    fontWeight: '800',
+    color: '#1A1A1A',
+    letterSpacing: -0.3,
   },
-  brandColor: { 
-    color: colors.primary, // #FF1E66
+  brandPartner: {
+    color: '#C41048',
   },
-  tagline: {
-    marginTop: 8,
-    fontSize: 12,
-    letterSpacing: 2.5,
-    color: '#666666',
+  subtitle: {
+    fontSize: 11,
+    letterSpacing: 3.5,
+    color: '#9CA3AF',
     fontWeight: '600',
   },
-  footer: {
+  // Progress bar sits near the very bottom of the screen
+  progressTrack: {
     position: 'absolute',
-    bottom: '12%',
-    left: 0,
-    right: 0,
-    alignItems: 'center',
-  },
-  track: {
-    height: 3,
-    borderRadius: 1.5,
-    backgroundColor: '#EEEEEE', // Subtle track
+    bottom: 52,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: '#F3E4E9',
     overflow: 'hidden',
   },
-  fill: {
+  progressFill: {
     height: '100%',
-    borderRadius: 1.5,
-    backgroundColor: colors.primary, // #FF1E66
+    borderRadius: 2,
+    overflow: 'hidden',
   },
 });

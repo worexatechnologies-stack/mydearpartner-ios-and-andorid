@@ -2,10 +2,10 @@ import BufferingIndicator from '../components/BufferingIndicator';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import React, { useEffect, useState } from 'react';
 import {
-  
   Alert,
   Modal,
   ScrollView,
+  Share,
   StyleSheet,
   Text,
   TouchableOpacity,
@@ -25,6 +25,7 @@ import { RootStackParamList } from '../navigation/types';
 import { colors, radii, shadow } from '../theme/theme';
 import { Profile } from '../types/models';
 import { computeCompatibilityScore } from '../utils/compatibility';
+import { triggerHaptic } from '../utils/haptics';
 import { isInterestQuotaError } from '../utils/interestErrors';
 import { usePlanAllowance } from '../utils/planAllowance';
 
@@ -91,6 +92,40 @@ export default function ProfileDetailScreen({ route, navigation }: Props) {
 
   const allowance = usePlanAllowance();
   const { recordView } = allowance;
+
+  const isPhotoLocked = Boolean(
+    profile &&
+      (profile.photoPrivacy === 'accepted_only' ||
+        profile.photoPrivacy === 'blurred') &&
+      existingInterest?.status !== 'accepted',
+  );
+
+  const handleShareBioData = async () => {
+    if (!profile) return;
+    try {
+      triggerHaptic('medium');
+      const lines = [
+        `💍 *Matrimonial Bio-Data — My Dear Partner* 💍\n`,
+        `👤 *Name*: ${profile.name}`,
+        `🎂 *Age / Height*: ${profile.age} yrs • ${profile.height || 'N/A'}`,
+        `💼 *Profession*: ${profile.profession}${profile.company ? ` at ${profile.company}` : ''}`,
+        `🎓 *Education*: ${profile.education || 'N/A'}`,
+        `📍 *Location*: ${profile.city}${profile.state ? `, ${profile.state}` : ''}`,
+        `🏛️ *Community*: ${profile.religion || 'Not specified'}${profile.caste ? ` (${profile.caste})` : ''}`,
+        profile.starNakshatra ? `⭐ *Astro / Nakshatra*: ${profile.starNakshatra}` : '',
+        profile.about ? `\n📝 *About*: "${profile.about.slice(0, 150)}..."` : '',
+        `\n📲 *View full verified profile on My Dear Partner*:`,
+        `https://mydearpartner.in/profile/${profile.id}`,
+      ].filter(Boolean);
+
+      await Share.share({
+        message: lines.join('\n'),
+        title: `${profile.name} — Matrimonial Profile`,
+      });
+    } catch {
+      // dismissed
+    }
+  };
 
   useEffect(() => {
     if (profileId) {
@@ -241,11 +276,50 @@ export default function ProfileDetailScreen({ route, navigation }: Props) {
   };
 
   const onMessage = async () => {
-    const chat = await getOrCreateChatWith(profile.id);
-    navigation.navigate('Chat', {
-      chatId: chat.id,
-      otherProfileId: profile.id,
-    });
+    if (!profile) return;
+    if (!allowance.isPremium) {
+      Alert.alert(
+        'Premium Required',
+        'Direct messaging is a Premium feature. Upgrade to Gold or Elite to chat with verified profiles.',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'View Plans',
+            onPress: () => navigation.navigate('Membership'),
+          },
+        ],
+      );
+      return;
+    }
+    try {
+      const chat = await getOrCreateChatWith(profile.id);
+      navigation.navigate('Chat', {
+        chatId: chat.id,
+        otherProfileId: profile.id,
+      });
+    } catch (err: any) {
+      if (
+        err?.status === 403 ||
+        err?.isAuthError ||
+        err?.message?.toLowerCase().includes('permission') ||
+        err?.message?.toLowerCase().includes('plan') ||
+        err?.message?.toLowerCase().includes('upgrade')
+      ) {
+        Alert.alert(
+          'Direct Messaging',
+          'Direct messaging requires a mutual connection or an upgraded membership plan. Upgrade your plan to chat directly with verified matches!',
+          [
+            { text: 'Cancel', style: 'cancel' },
+            {
+              text: 'View Plans',
+              onPress: () => navigation.navigate('Membership'),
+            },
+          ],
+        );
+      } else {
+        Alert.alert('Notice', err?.message ?? 'Could not start conversation.');
+      }
+    }
   };
 
   const handleBlockToggle = () => {
@@ -311,6 +385,7 @@ export default function ProfileDetailScreen({ route, navigation }: Props) {
                     showLoading
                     fallbackLabel="Photo unavailable"
                     resizeMode="cover"
+                    blurRadius={isPhotoLocked ? 24 : 0}
                   />
                   <LinearGradient
                     colors={[
@@ -321,6 +396,17 @@ export default function ProfileDetailScreen({ route, navigation }: Props) {
                     locations={[0, 0.35, 1]}
                     style={StyleSheet.absoluteFill}
                   />
+                  {isPhotoLocked && (
+                    <View style={styles.photoLockOverlay}>
+                      <View style={styles.photoLockBadge}>
+                        <Icon name="lock-closed" size={24} color="#FFF" />
+                        <Text style={styles.photoLockTitle}>Photos Protected</Text>
+                        <Text style={styles.photoLockSubtitle}>
+                          Full photos unlock once interest is accepted
+                        </Text>
+                      </View>
+                    </View>
+                  )}
                 </View>
               ))}
             </ScrollView>
@@ -612,6 +698,66 @@ export default function ProfileDetailScreen({ route, navigation }: Props) {
             </View>
           )}
 
+          {/* Horoscope & Kundali Compatibility Card */}
+          <View style={styles.infoCard}>
+            <View style={styles.cardHeaderRow}>
+              <Icon name="planet-outline" size={20} color="#D97706" />
+              <Text style={styles.cardHeaderTitle}>Horoscope & Kundali</Text>
+              <View style={styles.astroMatchPill}>
+                <Text style={styles.astroMatchPillText}>
+                  {compatScore ? `${Math.round(compatScore * 0.36)}/36 Gunas` : 'High Match'}
+                </Text>
+              </View>
+            </View>
+            <View style={styles.detailsGrid}>
+              <DetailItem
+                icon="star"
+                label="Nakshatra / Star"
+                value={profile.starNakshatra || 'Available on request'}
+              />
+              <DetailItem
+                icon="flame"
+                label="Manglik Status"
+                value={profile.manglikStatus || 'Non-Manglik'}
+              />
+              <DetailItem
+                icon="compass"
+                label="Gothra"
+                value={profile.gothra || 'Available on request'}
+              />
+              <DetailItem
+                icon="moon"
+                label="Horoscope"
+                value={profile.horoscope || 'Available on mutual connect'}
+              />
+            </View>
+          </View>
+
+          {/* WhatsApp Bio-Data Share Card */}
+          <TouchableOpacity
+            style={styles.whatsappCard}
+            onPress={handleShareBioData}
+            activeOpacity={0.88}
+          >
+            <LinearGradient
+              colors={['#25D366', '#128C7E']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 0 }}
+              style={styles.whatsappGradient}
+            >
+              <View style={styles.whatsappIconCircle}>
+                <Icon name="logo-whatsapp" size={26} color="#FFF" />
+              </View>
+              <View style={styles.whatsappCopy}>
+                <Text style={styles.whatsappTitle}>Share Bio-Data to WhatsApp</Text>
+                <Text style={styles.whatsappSub}>
+                  Send candidate summary directly to your parents or family
+                </Text>
+              </View>
+              <Icon name="arrow-forward-circle" size={24} color="#FFF" />
+            </LinearGradient>
+          </TouchableOpacity>
+
           {/* Hinge-style Prompts */}
           {profile.prompts && profile.prompts.length > 0 && (
             <View style={styles.promptsSection}>
@@ -638,12 +784,21 @@ export default function ProfileDetailScreen({ route, navigation }: Props) {
           <Icon name="chevron-back" size={22} color="#302330" />
         </TouchableOpacity>
         <Text style={styles.navTitle}>Meet your match</Text>
-        <TouchableOpacity
-          style={styles.glassBtn}
-          onPress={() => setShowMenu(true)}
-        >
-          <Icon name="ellipsis-horizontal" size={22} color="#302330" />
-        </TouchableOpacity>
+        <View style={{ flexDirection: 'row', gap: 8 }}>
+          <TouchableOpacity
+            style={styles.glassBtn}
+            onPress={handleShareBioData}
+            accessibilityLabel="Share profile via WhatsApp"
+          >
+            <Icon name="share-social-outline" size={20} color="#302330" />
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.glassBtn}
+            onPress={() => setShowMenu(true)}
+          >
+            <Icon name="ellipsis-horizontal" size={22} color="#302330" />
+          </TouchableOpacity>
+        </View>
       </View>
 
       {/* Floating Action Bar (Compact Pill Design - No text obscuration) */}
@@ -773,6 +928,15 @@ export default function ProfileDetailScreen({ route, navigation }: Props) {
         <TouchableWithoutFeedback onPress={() => setShowMenu(false)}>
           <View style={styles.menuOverlay}>
             <View style={styles.menuCard}>
+              <TouchableOpacity
+                style={styles.menuItem}
+                onPress={() => {
+                  setShowMenu(false);
+                  handleShareBioData();
+                }}
+              >
+                <Text style={styles.menuItemText}>Share Bio-Data (WhatsApp / Link)</Text>
+              </TouchableOpacity>
               <TouchableOpacity
                 style={styles.menuItem}
                 onPress={() => {
@@ -1187,5 +1351,90 @@ const styles = StyleSheet.create({
     fontSize: 9,
     fontWeight: '800',
     letterSpacing: 0.5,
+  },
+
+  // Horoscope & Astro
+  astroMatchPill: {
+    marginLeft: 'auto',
+    backgroundColor: '#FEF3C7',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: radii.pill,
+  },
+  astroMatchPillText: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#D97706',
+  },
+
+  // WhatsApp Bio-Data Card
+  whatsappCard: {
+    marginVertical: 12,
+    borderRadius: radii.xxl,
+    overflow: 'hidden',
+    ...shadow.sm,
+  },
+  whatsappGradient: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 16,
+  },
+  whatsappIconCircle: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
+  },
+  whatsappCopy: {
+    flex: 1,
+    marginRight: 8,
+  },
+  whatsappTitle: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: '#FFF',
+  },
+  whatsappSub: {
+    fontSize: 11,
+    color: 'rgba(255, 255, 255, 0.9)',
+    marginTop: 2,
+    lineHeight: 15,
+  },
+
+  // Photo Lock Protection
+  photoLockOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(0, 0, 0, 0.45)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 24,
+  },
+  photoLockBadge: {
+    backgroundColor: 'rgba(24, 24, 27, 0.75)',
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+    borderRadius: radii.xl,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.2)',
+  },
+  photoLockTitle: {
+    color: '#FFF',
+    fontSize: 15,
+    fontWeight: '800',
+    marginTop: 8,
+  },
+  photoLockSubtitle: {
+    color: 'rgba(255, 255, 255, 0.8)',
+    fontSize: 12,
+    marginTop: 4,
+    textAlign: 'center',
   },
 });
