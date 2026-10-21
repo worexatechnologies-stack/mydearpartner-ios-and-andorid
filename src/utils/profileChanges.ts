@@ -15,6 +15,9 @@ export function getProfileChanges(
       if (typeof value === 'string') {
         return value !== (typeof previous === 'string' ? previous.trim() : previous ?? '');
       }
+      if (typeof value === 'object' && value !== null) {
+        return JSON.stringify(value) !== JSON.stringify(previous ?? {});
+      }
       return value !== previous;
     }),
   );

@@ -1,0 +1,24 @@
+# Adapt the account, Node binary and installation directory to the verified host.
+[Unit]
+Description=MyDearPartner match insights service
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=www-data
+WorkingDirectory=/opt/mydearpartner-matching
+Environment=NODE_ENV=production
+Environment=HOST=127.0.0.1
+Environment=PORT=3001
+EnvironmentFile=/etc/mydearpartner-matching.env
+ExecStart=/usr/bin/node /opt/mydearpartner-matching/dist/index.js
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+
+[Install]
+WantedBy=multi-user.target

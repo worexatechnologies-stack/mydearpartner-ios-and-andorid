@@ -57,6 +57,7 @@ export async function saveTokens(
     currentAccessToken = accessToken;
     await AsyncStorage.removeItem(FALLBACK_KEY);
     await AsyncStorage.removeItem(LOGGED_OUT_KEY);
+    await AsyncStorage.removeItem('@mdp/session_replaced_notice');
   });
 }
 
@@ -116,9 +117,8 @@ export async function loadTokens(): Promise<StoredCredentials | null> {
 /**
  * Remove all authentication tokens from the Keychain.
  */
-export async function clearTokens(): Promise<void> {
+async function deleteStoredTokens(): Promise<void> {
   currentAccessToken = null;
-  return writeTokensSerially(async () => {
     let intentSaved = false;
     let nativeCleared = false;
     try {
@@ -140,7 +140,26 @@ export async function clearTokens(): Promise<void> {
     if (!intentSaved && !nativeCleared) {
       throw new Error('Could not clear your session. Please try again.');
     }
+}
+
+export async function clearTokens(): Promise<void> {
+  currentAccessToken = null;
+  return writeTokensSerially(deleteStoredTokens);
+}
+
+/** Compare and clear inside the same queue as login writes. */
+export async function clearTokensForSession(expected: StoredCredentials): Promise<boolean> {
+  let cleared = false;
+  await writeTokensSerially(async () => {
+    const result = await Keychain.getGenericPassword({ service: KEYCHAIN_SERVICE });
+    if (!result) return;
+    const actual = JSON.parse(result.password);
+    if (actual.accessToken !== expected.accessToken || actual.refreshToken !== expected.refreshToken) return;
+    await deleteStoredTokens();
+    await deleteStoredUserIds();
+    cleared = true;
   });
+  return cleared;
 }
 
 /**
@@ -244,8 +263,7 @@ export async function getUserIds(): Promise<StoredUserIds | null> {
 /**
  * Clear persisted user IDs on logout.
  */
-export async function clearUserIds(): Promise<void> {
-  return writeTokensSerially(async () => {
+async function deleteStoredUserIds(): Promise<void> {
     resetNotificationTracker();
     try {
       await Keychain.resetGenericPassword({
@@ -259,5 +277,8 @@ export async function clearUserIds(): Promise<void> {
     } catch {
       // Ignore
     }
-  });
+}
+
+export async function clearUserIds(): Promise<void> {
+  return writeTokensSerially(deleteStoredUserIds);
 }

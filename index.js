@@ -5,7 +5,11 @@
 // MUST be the very first import — installs global.crypto.subtle for WebCrypto E2EE
 import './src/utils/shim';
 import 'react-native-gesture-handler';
-import { AppRegistry } from 'react-native';
+import { AppRegistry, LogBox } from 'react-native';
+
+if (__DEV__) {
+  LogBox.ignoreAllLogs(true);
+}
 
 import { getMessaging, setBackgroundMessageHandler } from '@react-native-firebase/messaging';
 import notifee, { EventType } from '@notifee/react-native';

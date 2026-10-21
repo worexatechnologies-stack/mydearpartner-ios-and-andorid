@@ -14,6 +14,9 @@ export const StorageKeys = {
   CLEARED_NOTIFS: '@mdp/clearedNotifs',
   MUTED_USERS: '@mdp/mutedUsers',
   SETTINGS_V30: '@mdp/settings-v30',
+  DISCOVER_PROFILES: '@mdp/discoverProfiles',
+  PROFILE_CACHE: '@mdp/profileCache',
+  MY_PROFILE: '@mdp/myProfile',
 } as const;
 
 /** Keep member-specific preferences separate when multiple accounts share a device. */

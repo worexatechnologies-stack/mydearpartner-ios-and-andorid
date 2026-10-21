@@ -5,6 +5,7 @@
 export type Gender = 'male' | 'female' | 'other';
 
 export interface Profile {
+  websiteFields?: Record<string, string | number | string[] | null>;
   id: string;
   name: string;
   age: number;
@@ -120,6 +121,7 @@ export interface Interest {
 }
 
 export interface Message {
+  deliveryStatus?: 'sending' | 'sent' | 'delivered' | 'read' | 'failed' | 'unconfirmed';
   id: string;
   chatId: string;
   senderId: string;

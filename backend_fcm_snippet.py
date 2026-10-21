@@ -1,5 +1,6 @@
 """Reference FCM senders. Call these after the database transaction commits."""
 import logging
+from datetime import timedelta
 from firebase_admin import messaging
 
 logger = logging.getLogger(__name__)
@@ -28,8 +29,8 @@ def send_chat_push_notification(
             "sender_name": sender_name,
             "encrypted_text": encrypted_text,
         }
-        # Android is data-only, so its headless JS handler can decrypt before
-        # presenting a local notification. iOS needs a mutable APNs alert to
+        # Android receives a visible alert plus data so background display does
+        # not depend on headless JS. iOS needs a mutable APNs alert to
         # execute the Notification Service Extension while the app is closed.
         apns = None
         if platform.lower() == "ios":
@@ -60,7 +61,7 @@ def send_chat_push_notification(
                 ),
                 android=messaging.AndroidConfig(
                     priority="high",
-                    ttl=0,  # deliver immediately without delay or batching
+                    ttl=timedelta(hours=24),  # retain while temporarily offline
                     notification=messaging.AndroidNotification(
                         channel_id="mdp_messages_v2",
                         priority="max",
@@ -116,7 +117,7 @@ def send_interest_push_notification(
                 ),
                 android=messaging.AndroidConfig(
                     priority="high",
-                    ttl=0,  # deliver immediately without delay or batching
+                    ttl=timedelta(hours=24),  # retain while temporarily offline
                     notification=messaging.AndroidNotification(
                         channel_id="mdp_interests_v2",
                         priority="max",

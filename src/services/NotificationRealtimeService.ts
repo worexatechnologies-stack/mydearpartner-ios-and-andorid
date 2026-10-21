@@ -69,10 +69,27 @@ export async function handleRealtimeNotification(event: any) {
     if (conversationId) {
       DeviceEventEmitter.emit('REFRESH_ACTIVE_CHAT', conversationId);
     }
-    // Share push suppression, decryption and ID deduplication with FCM.
-    // Ignore incomplete refresh signals, which cannot be deduplicated.
-    if (data.message_id) {
-      await handleIncomingPush({ data: { ...data, kind: 'chat_message' } }, true);
+    const messageId =
+      data.message_id ||
+      data.messageId ||
+      data.id ||
+      event.message_id ||
+      event.messageId ||
+      event.entity_id ||
+      event.id;
+
+    if (messageId) {
+      await handleIncomingPush(
+        {
+          data: {
+            ...data,
+            conversation_id: conversationId,
+            message_id: String(messageId),
+            kind: 'chat_message',
+          },
+        },
+        true,
+      );
     }
     return;
   }

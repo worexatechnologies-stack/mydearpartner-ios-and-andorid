@@ -2,7 +2,7 @@ import { useEffect,useState } from 'react';
 import { AccessibilityInfo } from 'react-native';
 
 export function useReducedMotion(): boolean {
-  const [reduced, setReduced] = useState(true);
+  const [reduced, setReduced] = useState(false);
   useEffect(() => {
     if (process.env.NODE_ENV === 'test') {
       return;

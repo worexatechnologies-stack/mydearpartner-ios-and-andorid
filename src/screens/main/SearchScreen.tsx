@@ -1,3 +1,5 @@
+import ScreenContainer from '../../components/ScreenContainer';
+import { useSearchGrid } from '../../hooks/useSearchGrid';
 import { sameProfileCity } from '../../utils/profileLocation';
 import {
   BottomTabScreenProps,
@@ -26,7 +28,6 @@ import {
   TouchableOpacity,
   TouchableWithoutFeedback,
   View,
-  useWindowDimensions,
 } from 'react-native';
 import LinearGradient from 'react-native-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -44,6 +45,11 @@ import { computeCompatibilityScore } from '../../utils/compatibility';
 import { triggerHaptic } from '../../utils/haptics';
 import { isInterestQuotaError } from '../../utils/interestErrors';
 import { usePlanAllowance } from '../../utils/planAllowance';
+import {
+  calculateGeminiHoroscopeMatch,
+  GeminiHoroscopeAnalysis,
+} from '../../services/geminiHoroscopeService';
+import GeminiHoroscopeModal from '../../components/GeminiHoroscopeModal';
 
 type Props = CompositeScreenProps<
   BottomTabScreenProps<MainTabParamList, 'Search'>,
@@ -53,6 +59,12 @@ type Props = CompositeScreenProps<
 const QUICK_PROMPTS = [
   { id: 'near_me', label: 'Near me', icon: 'location', color: '#6366F1' },
   { id: 'high_match', label: '90%+ match', icon: 'flame', color: '#F59E0B' },
+  {
+    id: 'high_kundali',
+    label: 'Horoscope listed',
+    icon: 'planet',
+    color: '#D97706',
+  },
   {
     id: 'same_lang',
     label: 'Same language',
@@ -123,7 +135,7 @@ const PROFESSIONS = [
   'Civil Services',
 ];
 
-function ProfileGridCard({
+const ProfileGridCard = React.memo(function ProfileGridCard({
   profile,
   isShortlisted,
   interestStatus,
@@ -133,6 +145,8 @@ function ProfileGridCard({
   onPress,
   cardWidth,
   index,
+  myProfile,
+  onOpenHoroscope,
 }: {
   profile: Profile;
   isShortlisted: boolean;
@@ -143,6 +157,8 @@ function ProfileGridCard({
   onPress: () => void;
   cardWidth: number;
   index: number;
+  myProfile?: Profile | null;
+  onOpenHoroscope?: (profile: Profile, analysis: GeminiHoroscopeAnalysis) => void;
 }) {
   const scaleAnim = useRef(new Animated.Value(1)).current;
   const enterAnim = useRef(new Animated.Value(0)).current;
@@ -157,6 +173,10 @@ function ProfileGridCard({
   }, [enterAnim, index]);
 
   const matchScore = computeCompatibilityScore(profile);
+  const horoscope = useMemo(
+    () => calculateGeminiHoroscopeMatch(myProfile, profile),
+    [myProfile, profile],
+  );
   const isSent = interestRelationship
     ? interestRelationship.status === 'sent'
     : Boolean(interestStatus);
@@ -218,12 +238,26 @@ function ProfileGridCard({
           />
 
           <View style={styles.cardTopRow}>
-            <View style={styles.matchBadge}>
-              <Icon name="flame" size={10} color="#FF2D78" />
-              <Text style={styles.matchBadgeText}>
-                {' '}
-                {matchScore === null ? 'View profile' : `${matchScore}%`}
-              </Text>
+            <View style={{ flexDirection: 'row', gap: 4, alignItems: 'center' }}>
+              <View style={styles.matchBadge}>
+                <Icon name="flame" size={10} color="#FF2D78" />
+                <Text style={styles.matchBadgeText}>
+                  {' '}
+                  {matchScore === null ? 'View' : `${matchScore}%`}
+                </Text>
+              </View>
+              <TouchableOpacity
+                style={styles.kundaliBadge}
+                activeOpacity={0.8}
+                onPress={e => {
+                  e.stopPropagation?.();
+                  triggerHaptic('light');
+                  onOpenHoroscope?.(profile, horoscope);
+                }}
+              >
+                <Icon name="planet" size={10} color="#D97706" />
+                <Text style={styles.kundaliBadgeText}> Insights</Text>
+              </TouchableOpacity>
             </View>
             <TouchableOpacity
               style={[styles.heartBtn, isShortlisted && styles.heartBtnActive]}
@@ -333,7 +367,7 @@ function ProfileGridCard({
       </TouchableOpacity>
     </Animated.View>
   );
-}
+});
 
 function FilterSection({
   label,
@@ -391,17 +425,24 @@ export default function SearchScreen({ navigation, route }: Props) {
 
   const allowance = usePlanAllowance();
   const { refreshUsage } = allowance;
-  const { width } = useWindowDimensions();
+  const { columns, cardWidth, onLayout: measureGrid } = useSearchGrid();
   const insets = useSafeAreaInsets();
   const tabBarHeight = useBottomTabBarHeight();
-  const isVeryNarrow = width < 350;
-  const columns = isVeryNarrow ? 1 : width >= 1000 ? 4 : width >= 600 ? 3 : 2;
-  // On very narrow screens use single column, otherwise 2-column grid
-  const cardWidth = Math.floor((width - 28 - 12 * (columns - 1)) / columns);
-
   const [searchQuery, setSearchQuery] = useState('');
   const search = useProfileSearch(searchQuery, currentUser?.id ?? '');
   const [selectedPrompt, setSelectedPrompt] = useState<string | null>(null);
+  const [horoscopeTarget, setHoroscopeTarget] = useState<{
+    profile: Profile;
+    analysis: GeminiHoroscopeAnalysis;
+  } | null>(null);
+
+  const handleOpenHoroscope = useCallback(
+    (profile: Profile, analysis: GeminiHoroscopeAnalysis) => {
+      setHoroscopeTarget({ profile, analysis });
+    },
+    [],
+  );
+
   const [showFiltersModal, setShowFiltersModal] = useState(false);
   useFocusEffect(
     useCallback(() => {
@@ -685,9 +726,11 @@ export default function SearchScreen({ navigation, route }: Props) {
     }
   };
 
-  const sourceProfiles = search.profiles.filter(
-    p => getInterestRelationship(p.id).status === 'none',
-  );
+  const sourceProfiles = useMemo(() => {
+    return search.profiles.filter(
+      p => getInterestRelationship(p.id).status === 'none',
+    );
+  }, [search.profiles, getInterestRelationship]);
 
   const filteredProfiles = useMemo(() => {
     const myProfile = currentUser?.profile;
@@ -733,6 +776,9 @@ export default function SearchScreen({ navigation, route }: Props) {
           (computeCompatibilityScore(p) ?? -1) < 90
         ) {
           return false;
+        }
+        if (selectedPrompt === 'high_kundali') {
+          if (!p.starNakshatra?.trim()) return false;
         }
         if (selectedPrompt === 'verified' && !p.isVerified) {
           return false;
@@ -1101,7 +1147,7 @@ export default function SearchScreen({ navigation, route }: Props) {
   );
 
   return (
-    <View style={styles.root}>
+    <ScreenContainer constrained={false} edges={['left', 'right']} style={styles.root} onLayout={measureGrid}>
       <StatusBar barStyle="dark-content" />
       <FlatList
         key={`search-${columns}-col-grid`}
@@ -1125,9 +1171,10 @@ export default function SearchScreen({ navigation, route }: Props) {
         }
         keyExtractor={item => item.id}
         numColumns={columns}
-        columnWrapperStyle={isVeryNarrow ? undefined : styles.columnWrapper}
+        columnWrapperStyle={columns === 1 ? undefined : styles.columnWrapper}
         contentContainerStyle={[
           styles.listContent,
+          columns === 1 && { paddingHorizontal: 14 },
           {
             paddingBottom:
               tabBarHeight +
@@ -1149,6 +1196,7 @@ export default function SearchScreen({ navigation, route }: Props) {
         renderItem={({ item, index }) => (
           <ProfileGridCard
             profile={item}
+            myProfile={currentUser?.profile}
             isShortlisted={isShortlisted(item.id)}
             interestStatus={interestStatusFor(item.id)?.status}
             interestRelationship={getInterestRelationship(item.id)}
@@ -1157,6 +1205,7 @@ export default function SearchScreen({ navigation, route }: Props) {
               toggleShortlist(item.id);
             }}
             onToggleInterest={() => handleToggleInterest(item)}
+            onOpenHoroscope={handleOpenHoroscope}
             onPress={() =>
               navigation.navigate('ProfileDetail', { profileId: item.id })
             }
@@ -1312,14 +1361,23 @@ export default function SearchScreen({ navigation, route }: Props) {
           </View>
         </TouchableWithoutFeedback>
       </Modal>
-    </View>
+      {horoscopeTarget && (
+        <GeminiHoroscopeModal
+          visible={!!horoscopeTarget}
+          onClose={() => setHoroscopeTarget(null)}
+          analysis={horoscopeTarget.analysis}
+          myProfile={currentUser?.profile}
+          theirProfile={horoscopeTarget.profile}
+        />
+      )}
+    </ScreenContainer>
   );
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: colors.background },
+  root: { flex: 1, width: '100%', maxWidth: 1100, alignSelf: 'center', backgroundColor: colors.background },
   listContent: { paddingBottom: 120 },
-  columnWrapper: { justifyContent: 'space-between', paddingHorizontal: 14 },
+  columnWrapper: { gap: 12, paddingHorizontal: 14 },
 
   // Header
   header: {
@@ -1584,6 +1642,17 @@ const styles = StyleSheet.create({
     borderRadius: 10,
   },
   matchBadgeText: { color: '#6B344A', fontSize: 11, fontWeight: '800' },
+  kundaliBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FEF3C7',
+    paddingHorizontal: 6,
+    paddingVertical: 5,
+    borderRadius: 10,
+    borderWidth: 0.5,
+    borderColor: '#F59E0B',
+  },
+  kundaliBadgeText: { color: '#B45309', fontSize: 10, fontWeight: '800' },
   heartBtn: {
     width: 32,
     height: 32,
@@ -1677,6 +1746,9 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
   },
   sheet: {
+    width: '100%',
+    maxWidth: 640,
+    alignSelf: 'center',
     backgroundColor: '#0A050A',
     borderTopLeftRadius: 40,
     borderTopRightRadius: 40,

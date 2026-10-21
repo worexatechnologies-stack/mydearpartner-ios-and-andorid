@@ -1,3 +1,4 @@
+import { failureDelivery, restoreMessageDelivery } from '../utils/messageDelivery';
 import { useLatestCallback } from '../hooks/useLatestCallback';
 import { fetchInterestSnapshot } from '../services/InterestSyncService';
 import { waitForMessagingCryptoReady } from '../services/MessagingCryptoLifecycle';
@@ -45,6 +46,14 @@ accountStorageKey,
 getItem,
 setItem,
 } from '../utils/storage';
+import {
+CachedInterests,
+persistChats,
+persistDiscoverProfiles,
+persistInterests,
+persistMessages,
+persistProfileCache,
+} from '../services/BackgroundDataStore';
 
 import { blockService } from '../api/blockService';
 import * as ChatService from '../api/chatService';
@@ -67,6 +76,7 @@ import {
 markDailyInterestsExhausted,
 recordInterestSentToday,
 } from '../utils/planAllowance';
+import analyticsService, { getTimeToEventBand } from '../services/analyticsService';
 import { useAuth } from './AuthContext';
 // System push notifications are now handled exclusively by the FCM background
 // handler in index.js. Only in-app showInAppNotification is used here.
@@ -102,6 +112,8 @@ interface AppDataContextValue {
   chats: Chat[];
   getMessagesForChat: (chatId: string) => Message[];
   loadChatMessages: (chatId: string, partnerId?: string) => Promise<void>;
+  loadOlderChatMessages: (chatId: string, partnerId?: string) => Promise<void>;
+  getChatHistoryState: (chatId: string) => { next: string | null; loading: boolean; error?: string };
   connectToChat: (
     chatId: string,
     partnerId?: string,
@@ -114,7 +126,9 @@ interface AppDataContextValue {
     chatId: string,
     text: string,
     partnerId?: string,
+    retryId?: string,
   ) => Promise<void>;
+  dismissLocalMessage: (chatId: string, messageId: string) => void;
   getOtherParticipantId: (chat: Chat) => string;
   shortlistedIds: string[];
   shortlistedProfiles: Profile[];
@@ -201,6 +215,17 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
   >([]);
   const [chats, setChats] = useState<Chat[]>([]);
   const [messages, setMessages] = useState<Record<string, Message[]>>({});
+  type HistoryState = { next: string | null; loading: boolean; error?: string; loadedOlder?: boolean };
+  const [historyPages, setHistoryPages] = useState<Record<string, HistoryState>>({});
+  const historyPagesRef = useRef<Record<string, HistoryState>>({});
+  const historyCursorsRef = useRef<Record<string, Set<string>>>({});
+  const updateHistory = useCallback((chatId: string, patch: Partial<HistoryState>) => {
+    const next = { ...historyPagesRef.current, [chatId]: {
+      ...(historyPagesRef.current[chatId] ?? { next: null, loading: false }), ...patch,
+    } };
+    historyPagesRef.current = next;
+    setHistoryPages(next);
+  }, []);
   const [shortlist, setShortlist] = useState<string[]>([]);
   const [shortlistedProfilesList, setShortlistedProfilesList] = useState<
     Profile[]
@@ -213,7 +238,7 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
     string[]
   >([]);
 
-  // Load member preferences separately for every signed-in account.
+  // Load member preferences & cached app data separately for every signed-in account.
   useEffect(() => {
     let active = true;
     if (!myId) {
@@ -223,6 +248,7 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
         active = false;
       };
     }
+    // Instant Hydration from local storage
     getItem<string[]>(accountStorageKey(StorageKeys.MUTED_USERS, myId)).then(
       ids => {
         if (active) setMutedUserIds(new Set(ids ?? []));
@@ -231,6 +257,50 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
     getItem<string[]>(accountStorageKey(StorageKeys.CLEARED_NOTIFS, myId)).then(
       ids => {
         if (active) setClearedNotificationIds(ids ?? []);
+      },
+    );
+    getItem<Profile[]>(accountStorageKey(StorageKeys.DISCOVER_PROFILES, myId)).then(
+      cached => {
+        if (active && cached && cached.length > 0) {
+          setDiscoverProfiles(prev => (prev.length === 0 ? cached : prev));
+        }
+      },
+    );
+    getItem<Chat[]>(accountStorageKey(StorageKeys.CHATS, myId)).then(
+      cached => {
+        if (active && cached && cached.length > 0) {
+          setChats(prev => (prev.length === 0 ? cached : prev));
+          if (!chatsRef.current?.length) chatsRef.current = cached;
+        }
+      },
+    );
+    getItem<CachedInterests>(accountStorageKey(StorageKeys.INTERESTS, myId)).then(
+      cached => {
+        if (active && cached) {
+          if (cached.sent?.length) {
+            setSentInterestsList(prev => (prev.length === 0 ? cached.sent : prev));
+          }
+          if (cached.received?.length) {
+            setReceivedInterestsList(prev => (prev.length === 0 ? cached.received : prev));
+          }
+          if (cached.merged?.length) {
+            setInterests(prev => (prev.length === 0 ? cached.merged : prev));
+          }
+        }
+      },
+    );
+    getItem<Record<string, Message[]>>(accountStorageKey(StorageKeys.MESSAGES, myId)).then(
+      cached => {
+        if (active && cached) {
+          setMessages(prev => (Object.keys(prev).length === 0 ? restoreMessageDelivery(cached) : { ...restoreMessageDelivery(cached), ...prev }));
+        }
+      },
+    );
+    getItem<Record<string, Profile>>(accountStorageKey(StorageKeys.PROFILE_CACHE, myId)).then(
+      cached => {
+        if (active && cached) {
+          setProfileCache(prev => ({ ...cached, ...prev }));
+        }
       },
     );
     return () => {
@@ -254,6 +324,12 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
   const pollTimerRef = useRef<any>(null);
   // Ref that always holds the latest chats (for use inside polling callbacks)
   const chatsRef = useRef<Chat[]>([]);
+  const discoverProfilesRef = useRef<Profile[]>([]);
+  const sentInterestsListRef = useRef<Interest[]>([]);
+  const receivedInterestsListRef = useRef<Interest[]>([]);
+  const interestsRef = useRef<Interest[]>([]);
+  const messagesRef = useRef<Record<string, Message[]>>({});
+  const profileCacheRef = useRef<Record<string, Profile>>({});
   const cryptoMyIdRef = useRef<string | undefined>(cryptoMyId);
   const myIdRef = useRef<string>(myId);
   const myMemberIdRef = useRef<string>(myMemberId);
@@ -271,6 +347,29 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
     chatsRef.current = chats;
   }, [chats]);
 
+  useEffect(() => {
+    discoverProfilesRef.current = discoverProfiles;
+  }, [discoverProfiles]);
+
+  useEffect(() => {
+    sentInterestsListRef.current = sentInterestsList;
+  }, [sentInterestsList]);
+
+  useEffect(() => {
+    receivedInterestsListRef.current = receivedInterestsList;
+  }, [receivedInterestsList]);
+
+  useEffect(() => {
+    interestsRef.current = interests;
+  }, [interests]);
+
+  useEffect(() => {
+    messagesRef.current = messages;
+  }, [messages]);
+
+  useEffect(() => {
+    profileCacheRef.current = profileCache;
+  }, [profileCache]);
 
   useEffect(() => {
     cryptoMyIdRef.current = cryptoMyId;
@@ -468,6 +567,10 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
           cache[p.id] = p;
         });
         setProfileCache(prev => ({ ...prev, ...cache }));
+        if (myIdRef.current && sorted.length > 0) {
+          persistDiscoverProfiles(sorted, myIdRef.current);
+          persistProfileCache(cache, myIdRef.current);
+        }
       } catch {
         if (revision === discoverRevision.current) setProfilesError('Could not load profiles. Check your connection and try again.');
         // We no longer fallback to mock data to ensure strict API synchronization.
@@ -543,6 +646,9 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
         }
       });
       setInterests(merged);
+      if (myIdRef.current) {
+        persistInterests({ sent, received, merged }, myIdRef.current);
+      }
     } catch {
       setInterestsError('Could not refresh activity. Please try again.');
     } finally {
@@ -773,6 +879,17 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
               await getOrCreateChatWith(String(otherProfileId)).catch(() => {
                 DeviceEventEmitter.emit('REFRESH_CHATS');
               });
+              const createdTimestamp =
+                typeof target.createdAt === 'number'
+                  ? target.createdAt
+                  : target.createdAt
+                  ? new Date(target.createdAt).getTime()
+                  : undefined;
+              analyticsService
+                .trackMutualInterest({
+                  time_to_event_band: getTimeToEventBand(createdTimestamp),
+                })
+                .catch(() => {});
             }
           }
         }
@@ -867,6 +984,12 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
           ),
         );
         await recordInterestSentToday(toProfileId, myId).catch(() => {});
+        analyticsService
+          .trackInterestSent({
+            cohort: partnerProfile?.city || 'unknown',
+            action_context: 'discover_feed',
+          })
+          .catch(() => {});
         DeviceEventEmitter.emit('REFRESH_INTERESTS');
       } catch (err: any) {
         // Rollback optimistic sent interest on failure
@@ -939,9 +1062,13 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
       if (!effectiveId) return;
       const data = await ChatService.getChats(effectiveId);
       
-      setChats(data.map(chat => ({ ...chat,
+      const updatedChats = data.map(chat => ({ ...chat,
         connectionClosed: chatsRef.current.find(previous => previous.id === chat.id)?.connectionClosed,
-      })));
+      }));
+      setChats(updatedChats);
+      if (myIdRef.current) {
+        persistChats(updatedChats, myIdRef.current);
+      }
     } catch {
       setChatsError('Could not refresh conversations. Please try again.');
     } finally {
@@ -961,80 +1088,117 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
     [myId],
   );
 
+  const sendsInFlight = useRef(new Set<string>());
   const sendMessage = useCallback(
-    async (chatId: string, text: string, partnerId?: string) => {
+    async (chatId: string, text: string, partnerId?: string, retryId?: string) => {
       const trimmed = text.trim();
       if (!trimmed) return;
 
-      // The server stores only ciphertext. Prefer the member/account id from
-      // the conversation record because a profile id derives a different key.
-      const chat = chatsRef.current.find(c => String(c.id) === String(chatId));
-      if (chat?.connectionClosed) throw new Error('This match has been removed.');
-      const conversationPartnerId = chat?.participantIds?.find(
-        id => id && id !== 'CURRENT_USER_PLACEHOLDER',
-      );
-      let senderId = myMemberIdRef.current;
-      if (!senderId) {
-        // After a cold restore, React state can briefly contain a profile ID.
-        // Read the JWT once so a message can never be encrypted with that ID.
-        const stored = await loadTokens();
-        senderId = stored?.accessToken
-          ? getMemberUserIdFromToken(stored.accessToken) ?? ''
-          : '';
+      const accountId = myIdRef.current;
+      const localId = retryId || `local-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+      if (sendsInFlight.current.has(localId)) return;
+      if (retryId && messagesRef.current[chatId]?.find(m => m.id === retryId)?.deliveryStatus !== 'failed') {
+        throw new Error('Refresh the conversation to confirm this message before retrying.');
       }
-      senderId = senderId || await waitForMessagingCryptoReady() || '';
-      const encryptionPartnerId =
-        chat?.otherProfile?.userId ||
-        conversationPartnerId ||
-        partnerId ||
-        chat?.otherProfile?.id;
-
-      if (
-        !senderId ||
-        !encryptionPartnerId ||
-        encryptionPartnerId === 'CURRENT_USER_PLACEHOLDER'
-      ) {
-        throw new Error(
-          'Secure messaging is not ready yet. Please try again in a moment.',
+      sendsInFlight.current.add(localId);
+      const local: Message = { id: localId, chatId, senderId: myMemberIdRef.current || accountId,
+        text: trimmed, createdAt: Date.now(), deliveryStatus: 'sending' };
+      setMessages(prev => ({ ...prev, [chatId]: [...(prev[chatId] ?? []).filter(m => m.id !== localId), local] }));
+      let requestStarted = false;
+      try {
+        // The server stores only ciphertext. Prefer the member/account id from
+        // the conversation record because a profile id derives a different key.
+        const chat = chatsRef.current.find(c => String(c.id) === String(chatId));
+        if (chat?.connectionClosed) throw new Error('This match has been removed.');
+        let senderId = myMemberIdRef.current;
+        if (!senderId) {
+          // After a cold restore, React state can briefly contain a profile ID.
+          // Read the JWT once so a message can never be encrypted with that ID.
+          const stored = await loadTokens();
+          senderId = stored?.accessToken
+            ? getMemberUserIdFromToken(stored.accessToken) ?? ''
+            : '';
+        }
+        senderId = senderId || await waitForMessagingCryptoReady() || '';
+        const conversationPartnerId = chat?.participantIds?.find(
+          id => id && id !== senderId && id !== myIdRef.current && id !== 'CURRENT_USER_PLACEHOLDER',
         );
-      }
+        const encryptionPartnerId =
+          chat?.otherProfile?.userId ||
+          conversationPartnerId ||
+          partnerId ||
+          chat?.otherProfile?.id;
 
-      // Require the same secure server storage contract for text and stickers.
-      const wireText = await encryptMessageForChat(
-        trimmed,
-        senderId,
-        encryptionPartnerId,
-      );
+        if (
+          !senderId ||
+          !encryptionPartnerId ||
+          encryptionPartnerId === 'CURRENT_USER_PLACEHOLDER'
+        ) {
+          throw new Error(
+            'Secure messaging is not ready yet. Please try again in a moment.',
+          );
+        }
 
-      // A successful socket.send only confirms a local buffer write. Use the
-      // server's persisted message response before declaring delivery successful.
-      if (chatsRef.current.find(item => String(item.id) === String(chatId))?.connectionClosed) {
-        throw new Error('This match has been removed.');
-      }
-      const saved = await ChatService.sendMessage(chatId, wireText, encryptionPartnerId);
-      const message = { ...saved, chatId, text: trimmed };
-      setMessages(prev => ({
-        ...prev,
-        [chatId]: [...(prev[chatId] ?? []).filter(item => item.id !== message.id), message],
-      }));
-      setChats(prev => prev.map(item => item.id === chatId ? {
-        ...item, lastMessage: trimmed, lastMessageAt: message.createdAt,
-      } : item));
+        // Require the same secure server storage contract for text and stickers.
+        const wireText = await encryptMessageForChat(
+          trimmed,
+          senderId,
+          encryptionPartnerId,
+        );
+
+        // A successful socket.send only confirms a local buffer write. Use the
+        // server's persisted message response before declaring delivery successful.
+        if (chatsRef.current.find(item => String(item.id) === String(chatId))?.connectionClosed) {
+          throw new Error('This match has been removed.');
+        }
+        if (accountId !== myIdRef.current) throw new Error('The signed-in account changed.');
+        requestStarted = true;
+        const saved = await ChatService.sendMessage(chatId, wireText, encryptionPartnerId);
+        if (accountId !== myIdRef.current) return;
+        const message = { ...saved, chatId, text: trimmed, deliveryStatus: saved.deliveryStatus || 'sent' as const };
+        setMessages(prev => ({
+          ...prev,
+          [chatId]: [...(prev[chatId] ?? []).filter(item => item.id !== message.id && item.id !== localId), message],
+        }));
+        setChats(prev => prev.map(item => item.id === chatId ? {
+          ...item, lastMessage: trimmed, lastMessageAt: message.createdAt,
+        } : item));
+      } catch (error) {
+        if (accountId === myIdRef.current) setMessages(prev => ({ ...prev,
+          [chatId]: (prev[chatId] ?? []).map(m => m.id === localId ? { ...m, deliveryStatus: failureDelivery(error, requestStarted) } : m),
+        }));
+        if (error && typeof error === 'object') Object.assign(error, {
+          localMessageId: localId, deliveryUnconfirmed: failureDelivery(error, requestStarted) === 'unconfirmed',
+        });
+        throw error;
+      } finally { sendsInFlight.current.delete(localId); }
     },
     // Refs are stable (never recreated) so listing them does not cause re-runs.
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [cryptoMyId, myMemberId],
   );
 
+  const dismissLocalMessage = useCallback((chatId: string, messageId: string) => {
+    const prev = messagesRef.current;
+    const next = { ...prev, [chatId]: (prev[chatId] ?? []).filter(message =>
+      !(message.id === messageId && message.id.startsWith('local-') &&
+        (message.deliveryStatus === 'failed' || message.deliveryStatus === 'unconfirmed'))),
+    };
+    messagesRef.current = next;
+    setMessages(next);
+    if (myIdRef.current) persistMessages(next, myIdRef.current);
+  }, []);
+
   // ─── WebSocket Message Handler ───────────────────────────────────────────
 
   // ─── Load Chat Messages ───────────────────────────────────────────────────
   // Called when user opens a chat screen (ChatScreen mounts)
   const loadChatMessages = useCallback(
-    async (chatId: string, partnerId?: string) => {
+    async (chatId: string, partnerId?: string, olderCursor?: string) => {
       if (loadingChatsRef.current.has(chatId)) return;
       loadingChatsRef.current.add(chatId);
-
+      const accountId = myIdRef.current;
+      updateHistory(chatId, olderCursor ? { loading: true, error: undefined } : { loading: true });
       try {
         const chat = chatsRef.current.find(c => c.id === chatId);
         const partnerMemberId = chat?.otherProfile?.userId;
@@ -1050,7 +1214,17 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
           memberId = myMemberIdRef.current || currentUser?.id || currentUser?.profile?.userId || currentUser?.profile?.id || null;
         }
         if (!memberId) throw new Error('Messaging is not ready. Please try again.');
-        const msgs = await ChatService.getMessages(chatId, memberId, resolvedPartner ?? chatId);
+        const page = await ChatService.getMessagePage(chatId, memberId, resolvedPartner ?? chatId, olderCursor);
+        if (accountId !== myIdRef.current) return;
+        const msgs = page.messages;
+        if (olderCursor) {
+          const seen = historyCursorsRef.current[chatId] ?? new Set<string>();
+          seen.add(olderCursor);
+          historyCursorsRef.current[chatId] = seen;
+          updateHistory(chatId, { next: page.next && !seen.has(page.next) ? page.next : null, loadedOlder: true, error: undefined });
+        } else if (!historyPagesRef.current[chatId]?.loadedOlder) {
+          updateHistory(chatId, { next: page.next, error: undefined });
+        }
 
         setMessages(prev => {
           const prevList = prev[chatId] ?? [];
@@ -1061,7 +1235,7 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
             if (idx === -1) {
               merged.push(m);
               hasDiff = true;
-            } else if (merged[idx].text !== m.text) {
+            } else if (merged[idx].text !== m.text || merged[idx].deliveryStatus !== m.deliveryStatus) {
               merged[idx] = m;
               hasDiff = true;
             }
@@ -1070,7 +1244,7 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
           return { ...prev, [chatId]: merged };
         });
 
-        if (msgs.length > 0) {
+        if (!olderCursor && msgs.length > 0) {
           const latest = msgs.reduce((a, b) =>
             a.createdAt > b.createdAt ? a : b,
           );
@@ -1098,16 +1272,27 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
           }
         }
       } catch (err) {
+        if (olderCursor && accountId === myIdRef.current) updateHistory(chatId, { error: 'Could not load more history. Tap to retry.' });
         throw err;
       } finally {
         loadingChatsRef.current.delete(chatId);
+        if (accountId === myIdRef.current) updateHistory(chatId, { loading: false });
       }
     },
     // cryptoMyId / myMemberId stabilise after login; listing them ensures the
     // callback always uses the freshest member id for E2EE key derivation.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [cryptoMyId, myMemberId],
+    [cryptoMyId, myMemberId, updateHistory],
   );
+
+  const loadOlderChatMessages = useCallback(async (chatId: string, partnerId?: string) => {
+    const cursor = historyPagesRef.current[chatId]?.next;
+    if (!cursor || loadingChatsRef.current.has(chatId)) return;
+    await loadChatMessages(chatId, partnerId, cursor);
+  }, [loadChatMessages]);
+
+  const getChatHistoryState = useCallback((chatId: string) =>
+    historyPages[chatId] ?? { next: null, loading: false }, [historyPages]);
 
   const connectToChat = useLatestCallback(
     (
@@ -1123,7 +1308,7 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
       const chat = chatsRef.current.find(c => c.id === chatId);
       const partnerMemberId = chat?.otherProfile?.userId;
       const conversationPartnerId = chat?.participantIds?.find(
-        id => id && id !== 'CURRENT_USER_PLACEHOLDER',
+        id => id && id !== myMemberIdRef.current && id !== myIdRef.current && id !== 'CURRENT_USER_PLACEHOLDER',
       );
       let resolvedPartner =
         partnerMemberId || conversationPartnerId || partnerId;
@@ -1460,7 +1645,42 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
   // ─── Instant App Foreground & Real-Time Push Event Sync ───────────────────
   useEffect(() => {
     const handleActiveSync = () => {
-      if (currentUser) {
+      if (currentUser && myIdRef.current) {
+        // Instant rehydration of background-received messages, chats, and interests
+        getItem<Record<string, Message[]>>(accountStorageKey(StorageKeys.MESSAGES, myIdRef.current)).then(
+          cached => {
+            if (cached) setMessages(prev => {
+              const restored = restoreMessageDelivery(cached);
+              const merged = { ...prev };
+              for (const [id, rows] of Object.entries(restored)) {
+                // Cached local cards can predate a successful send or dismissal.
+                // Only a cold restore should resurrect an interrupted local send.
+                const byId = new Map(rows.filter(m => !m.id.startsWith('local-')).map(m => [m.id, m]));
+                for (const m of prev[id] ?? []) byId.set(m.id, m);
+                merged[id] = [...byId.values()];
+              }
+              return merged;
+            });
+          },
+        );
+        getItem<Chat[]>(accountStorageKey(StorageKeys.CHATS, myIdRef.current)).then(
+          cached => {
+            if (cached && cached.length > 0) {
+              setChats(cached);
+              chatsRef.current = cached;
+            }
+          },
+        );
+        getItem<CachedInterests>(accountStorageKey(StorageKeys.INTERESTS, myIdRef.current)).then(
+          cached => {
+            if (cached) {
+              if (cached.sent?.length) setSentInterestsList(cached.sent);
+              if (cached.received?.length) setReceivedInterestsList(cached.received);
+              if (cached.merged?.length) setInterests(cached.merged);
+            }
+          },
+        );
+
         loadInterests();
         loadChats();
         loadDiscoverProfiles();
@@ -1470,6 +1690,22 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
     const subscription = AppState.addEventListener('change', nextAppState => {
       if (nextAppState === 'active') {
         handleActiveSync();
+      } else if (nextAppState === 'background' || nextAppState === 'inactive') {
+        // App backgrounded: immediately flush in-memory data to local storage
+        if (myIdRef.current) {
+          persistChats(chatsRef.current, myIdRef.current);
+          persistInterests(
+            {
+              sent: sentInterestsListRef.current,
+              received: receivedInterestsListRef.current,
+              merged: interestsRef.current,
+            },
+            myIdRef.current,
+          );
+          persistMessages(messagesRef.current, myIdRef.current);
+          persistDiscoverProfiles(discoverProfilesRef.current, myIdRef.current);
+          persistProfileCache(profileCacheRef.current, myIdRef.current);
+        }
       }
     });
 
@@ -1521,10 +1757,13 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
       chats: myChats,
       getMessagesForChat,
       loadChatMessages,
+      loadOlderChatMessages,
+      getChatHistoryState,
       connectToChat,
       disconnectFromChat,
       getOrCreateChatWith,
       sendMessage,
+      dismissLocalMessage,
       getOtherParticipantId,
       shortlistedIds: shortlist,
       shortlistedProfiles,
@@ -1573,10 +1812,13 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
       myChats,
       getMessagesForChat,
       loadChatMessages,
+      loadOlderChatMessages,
+      getChatHistoryState,
       connectToChat,
       disconnectFromChat,
       getOrCreateChatWith,
       sendMessage,
+      dismissLocalMessage,
       getOtherParticipantId,
       shortlist,
       shortlistedProfiles,

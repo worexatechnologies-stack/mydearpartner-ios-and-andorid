@@ -2,9 +2,7 @@ import BufferingIndicator from '../../components/BufferingIndicator';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import React, { useState } from 'react';
 import {
-  
   Alert,
-  Modal,
   PermissionsAndroid,
   Platform,
   ScrollView,
@@ -23,7 +21,10 @@ type Props = NativeStackScreenProps<RootStackParamList, 'Verification'>;
 
 import { launchCamera, launchImageLibrary } from 'react-native-image-picker';
 import { verificationService } from '../../api/verificationService';
-import { COMPATIBLE_CAMERA_OPTIONS, COMPATIBLE_IMAGE_PICKER_OPTIONS } from '../../utils/profilePhotos';
+import {
+  COMPATIBLE_CAMERA_OPTIONS,
+  COMPATIBLE_IMAGE_PICKER_OPTIONS,
+} from '../../utils/profilePhotos';
 
 export default function VerificationScreen({ navigation }: Props) {
   const [idVerified, setIdVerified] = useState(false);
@@ -51,7 +52,6 @@ export default function VerificationScreen({ navigation }: Props) {
     }
   };
 
-  const [showCamera, setShowCamera] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
 
   const onUploadDoc = (docType: string) => {
@@ -112,70 +112,63 @@ export default function VerificationScreen({ navigation }: Props) {
       'Your selfie will be uploaded to My Dear Partner for verification review. You can request deletion in Settings. Continue?',
       [
         { text: 'Cancel', style: 'cancel' },
-        { text: 'Continue', onPress: () => setShowCamera(true) },
+        { text: 'Open Camera', onPress: handleCapture },
       ],
     );
   };
 
   const handleCapture = async () => {
-    if (Platform.OS === 'android') {
-      try {
+    if (isProcessing) return;
+    setIsProcessing(true);
+    try {
+      if (Platform.OS === 'android') {
         const permission = await PermissionsAndroid.request(
           PermissionsAndroid.PERMISSIONS.CAMERA,
         );
         if (permission !== PermissionsAndroid.RESULTS.GRANTED) {
           Alert.alert(
             'Camera permission needed',
-            'Allow camera access to take a verification selfie.',
+            'Allow camera access in Settings to take a verification selfie.',
           );
           return;
         }
-      } catch {
+      }
+      const response = await launchCamera(COMPATIBLE_CAMERA_OPTIONS);
+      if (response.didCancel) return;
+      if (response.errorCode) {
         Alert.alert(
           'Camera unavailable',
-          'Could not request camera permission. Please try again.',
+          response.errorCode === 'permission'
+            ? 'Allow camera access in Settings to take a verification selfie.'
+            : 'Could not open the camera. On a simulator, try this on a physical phone.',
         );
         return;
       }
+      const asset = response.assets?.[0];
+      if (!asset?.uri) {
+        Alert.alert(
+          'No selfie captured',
+          'Please open the camera and take a new selfie.',
+        );
+        return;
+      }
+      const status = await verificationService.submitSelfie(asset.uri);
+      setSelfieVerified(status.selfieVerified);
+      Alert.alert(
+        status.selfieVerified ? 'Selfie Verified' : 'Selfie Submitted',
+        status.selfieVerified
+          ? 'Your selfie verification is complete.'
+          : 'Your selfie has been submitted for review.',
+      );
+    } catch (e: any) {
+      Alert.alert(
+        'Selfie submission failed',
+        e?.message ??
+          'Could not capture or upload your selfie. Please try again.',
+      );
+    } finally {
+      setIsProcessing(false);
     }
-    setShowCamera(false);
-    setIsProcessing(true);
-    launchCamera(
-      COMPATIBLE_CAMERA_OPTIONS,
-      async response => {
-        if (
-          response.didCancel ||
-          !response.assets ||
-          response.assets.length === 0
-        ) {
-          setIsProcessing(false);
-          return;
-        }
-        const asset = response.assets[0];
-        if (!asset.uri) {
-          setIsProcessing(false);
-          return;
-        }
-
-        try {
-          const status = await verificationService.submitSelfie(asset.uri);
-          setSelfieVerified(status.selfieVerified);
-          Alert.alert(
-            status.selfieVerified ? 'Selfie Verified' : 'Selfie Submitted',
-            status.selfieVerified
-              ? 'Your selfie verification is complete.'
-              : 'Your selfie has been submitted for review.',
-          );
-        } catch (e: any) {
-          Alert.alert(
-            'Verification Failed',
-            e?.message ?? 'Could not verify selfie. Please try again.',
-          );
-        } finally {
-          setIsProcessing(false);
-        }
-      },
-    );
   };
 
   return (
@@ -188,7 +181,11 @@ export default function VerificationScreen({ navigation }: Props) {
         {statusError ? (
           <View accessibilityRole="alert">
             <Text style={{ color: colors.text }}>{statusError}</Text>
-            <AppButton title="Retry verification status" onPress={loadStatus} variant="secondary" />
+            <AppButton
+              title="Retry verification status"
+              onPress={loadStatus}
+              variant="secondary"
+            />
           </View>
         ) : null}
         {/* Trust Score Header */}
@@ -386,63 +383,6 @@ export default function VerificationScreen({ navigation }: Props) {
           <AppButton title="Done" onPress={() => navigation.goBack()} />
         </View>
       </ScrollView>
-
-      {/* Camera Simulation Modal */}
-      <Modal
-        visible={showCamera}
-        animationType="slide"
-        transparent={false}
-        onRequestClose={() => setShowCamera(false)}
-      >
-        <View style={styles.cameraContainer}>
-          <Text style={styles.cameraTitle}>Selfie verification</Text>
-          <Text style={styles.cameraSubtitle}>
-            Take a clear selfie to submit for verification review.
-          </Text>
-
-          <View style={styles.poseContainer}>
-            <Icon name="camera-outline" size={32} color={colors.primary} />
-            <Text style={styles.poseInstruction}>
-              Look straight into the camera
-            </Text>
-          </View>
-
-          <View style={styles.cameraViewfinder}>
-            {isProcessing ? (
-              <View style={styles.processingOverlay}>
-                <BufferingIndicator size="large" color="#FFF" />
-                <Text style={styles.processingText}>AI Matching Face...</Text>
-              </View>
-            ) : (
-              <View style={styles.cameraGuideline}>
-                <Text style={{ color: 'rgba(255,255,255,0.5)' }}>
-                  Align face here
-                </Text>
-              </View>
-            )}
-          </View>
-
-          <View style={styles.cameraControls}>
-            <TouchableOpacity
-              style={styles.cancelBtn}
-              onPress={() => setShowCamera(false)}
-              disabled={isProcessing}
-            >
-              <Text style={styles.cancelBtnText}>Cancel</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={[styles.captureBtn, isProcessing && { opacity: 0.5 }]}
-              onPress={handleCapture}
-              disabled={isProcessing}
-            >
-              <View style={styles.captureBtnInner} />
-            </TouchableOpacity>
-
-            <View style={{ width: 60 }} />
-          </View>
-        </View>
-      </Modal>
     </ScreenContainer>
   );
 }
@@ -609,105 +549,5 @@ const styles = StyleSheet.create({
   },
   footerBtn: {
     marginTop: spacing.md,
-  },
-  cameraContainer: {
-    flex: 1,
-    backgroundColor: '#000',
-    paddingTop: 60,
-    paddingHorizontal: 24,
-    alignItems: 'center',
-  },
-  cameraTitle: {
-    color: '#FFF',
-    fontSize: 24,
-    fontWeight: '800',
-    marginBottom: 8,
-  },
-  cameraSubtitle: {
-    color: '#9CA3AF',
-    fontSize: 14,
-    textAlign: 'center',
-    marginBottom: 32,
-  },
-  poseContainer: {
-    backgroundColor: 'rgba(255,255,255,0.1)',
-    padding: 16,
-    borderRadius: 16,
-    alignItems: 'center',
-    marginBottom: 32,
-  },
-  poseIcon: {
-    fontSize: 48,
-    marginBottom: 8,
-  },
-  poseInstruction: {
-    color: '#FFF',
-    fontSize: 16,
-    fontWeight: '700',
-  },
-  cameraViewfinder: {
-    width: 280,
-    height: 380,
-    borderRadius: 140,
-    borderWidth: 2,
-    borderColor: 'rgba(255,255,255,0.3)',
-    overflow: 'hidden',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 48,
-  },
-  cameraGuideline: {
-    width: '100%',
-    height: '100%',
-    borderWidth: 4,
-    borderStyle: 'dashed',
-    borderColor: 'rgba(255,255,255,0.2)',
-    borderRadius: 140,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  processingOverlay: {
-    position: 'absolute',
-    top: 0,
-    bottom: 0,
-    left: 0,
-    right: 0,
-    backgroundColor: 'rgba(0,0,0,0.7)',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  processingText: {
-    color: '#FFF',
-    marginTop: 16,
-    fontSize: 16,
-    fontWeight: '700',
-  },
-  cameraControls: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    width: '100%',
-  },
-  cancelBtn: {
-    padding: 16,
-  },
-  cancelBtnText: {
-    color: '#FFF',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  captureBtn: {
-    width: 72,
-    height: 72,
-    borderRadius: 36,
-    backgroundColor: 'rgba(255,255,255,0.3)',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  captureBtnInner: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    backgroundColor: '#FFF',
   },
 });

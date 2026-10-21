@@ -7,6 +7,8 @@
  *   DELETE /api/v1/devices/{token}/  → unregister on logout
  */
 
+import { loadTokens } from '../utils/keychain';
+import { decodeJwtPayload } from '../utils/jwt';
 import { Platform } from 'react-native';
 import { del,post } from './apiClient';
 
@@ -24,8 +26,14 @@ export async function registerDeviceToken(token: string): Promise<boolean> {
   try {
     await post('/devices/', {
       token,
+      registration_id: token,
       platform: Platform.OS === 'ios' ? 'ios' : 'android',
+      type: Platform.OS === 'ios' ? 'ios' : 'android',
     });
+    const stored = await loadTokens();
+    if (stored?.accessToken && decodeJwtPayload(stored.accessToken)?.mdp_sid) {
+      await post('/auth/session/device/', { token });
+    }
     return true;
   } catch (err: any) {
     if (err?.status === 404) {

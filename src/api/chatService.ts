@@ -1,3 +1,5 @@
+import { API_BASE_URL } from '../config/env';
+import { confirmedDelivery } from '../utils/messageDelivery';
 /**
  * MyDearPartner — Chat Service
  *
@@ -101,6 +103,7 @@ async function mapMessage(
   }
 
   return {
+    deliveryStatus: confirmedDelivery(bm),
     id: String(bm.id),
     chatId: bm.chat_id ?? (bm as any).conversation_id,
     senderId: String(bm.sender_id),
@@ -158,37 +161,59 @@ export async function getOrCreateChat(
   return mapChat(chat, myId);
 }
 
-/**
- * Get messages for a chat (most recent page) — decrypts each message.
- */
-export async function getMessages(
-  chatId: string,
-  myId: string,
-  partnerId: string,
-): Promise<Message[]> {
+export interface MessagePage {
+  messages: Message[];
+  next: string | null;
+}
+
+/** Follow only links for this conversation on the configured API origin. */
+function historyLink(link: unknown, current: string, allowedPaths: string[]): string | null {
+  if (link === null || link === undefined || link === '') return null;
+  if (typeof link !== 'string') throw new Error('Invalid message history link.');
+  const base = new URL(API_BASE_URL);
+  const candidate = link.startsWith('/conversations/') ? `${API_BASE_URL}${link}` : link;
+  const url = new URL(candidate, current);
+  if (url.origin !== base.origin || url.protocol !== 'https:' || url.username || url.password ||
+      url.hash || !allowedPaths.includes(url.pathname)) throw new Error('Invalid message history link.');
+  return url.toString() === current ? null : url.toString();
+}
+
+/** Read one server-provided history page. No guessed page numbers or cursors. */
+export async function getMessagePage(
+  chatId: string, myId: string, partnerId: string, cursor?: string,
+): Promise<MessagePage> {
   const target = partnerId || chatId;
-  let data;
-  try {
-    data = await get<any>(`/conversations/${target}/messages/`);
-  } catch (err: any) {
-    if ([404, 405].includes(err?.status) && target !== chatId) {
-      try {
-        data = await get<any>(`/conversations/${chatId}/messages/`);
-      } catch (fallbackErr: any) {
-        if ([404, 405].includes(fallbackErr?.status)) {
-          return [];
-        }
-        throw fallbackErr;
-      }
-    } else if ([404, 405].includes(err?.status)) {
-      return [];
-    } else {
-      throw err;
+  const primary = `/conversations/${encodeURIComponent(target)}/messages/`;
+  const fallback = `/conversations/${encodeURIComponent(chatId)}/messages/`;
+  const primaryUrl = `${API_BASE_URL}${primary}`;
+  const allowed = [new URL(primaryUrl).pathname, new URL(`${API_BASE_URL}${fallback}`).pathname];
+  let endpoint = cursor ? historyLink(cursor, primaryUrl, allowed) : primary;
+  if (!endpoint) throw new Error('Invalid message history link.');
+  let data: any;
+  try { data = await get<any>(endpoint); }
+  catch (error: any) {
+    if (cursor || ![404, 405].includes(error?.status)) throw error;
+    if (target === chatId) return { messages: [], next: null };
+    endpoint = fallback;
+    try { data = await get<any>(endpoint); }
+    catch (fallbackError: any) {
+      if ([404, 405].includes(fallbackError?.status)) return { messages: [], next: null };
+      throw fallbackError;
     }
   }
   const rows = extractResults<BackendMessage>(data).filter(row => row && typeof row === 'object' && row.id &&
     row.sender_id && Number.isFinite(new Date(row.created_at).getTime()));
-  return Promise.all(rows.map(row => mapMessage(row, myId, partnerId, chatId)));
+  const currentUrl = endpoint.startsWith('/') ? `${API_BASE_URL}${endpoint}` : endpoint;
+  const pagination = data?.next !== undefined ? data : data?.data;
+  return {
+    messages: await Promise.all(rows.map(row => mapMessage(row, myId, partnerId, chatId))),
+    next: historyLink(pagination?.next, currentUrl, allowed),
+  };
+}
+
+/** Compatibility helper for push hydration and callers needing the latest page. */
+export async function getMessages(chatId: string, myId: string, partnerId: string): Promise<Message[]> {
+  return (await getMessagePage(chatId, myId, partnerId)).messages;
 }
 
 /**
@@ -211,6 +236,7 @@ export async function sendMessage(
     throw new Error('Message confirmation was incomplete. Refresh the conversation before trying again.');
   }
   return {
+    deliveryStatus: confirmedDelivery(saved),
     id: String(saved.id),
     chatId: saved.chat_id ?? (saved as any).conversation_id,
     senderId: String(saved.sender_id),

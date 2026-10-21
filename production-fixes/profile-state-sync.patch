@@ -1,0 +1,148 @@
+diff --git a/backend/apps/accounts/migrations/0047_memberprofile_state.py b/backend/apps/accounts/migrations/0047_memberprofile_state.py
+new file mode 100644
+index 0000000..b2df7c7
+--- /dev/null
++++ b/backend/apps/accounts/migrations/0047_memberprofile_state.py
+@@ -0,0 +1,9 @@
++from django.db import migrations, models
++
++
++class Migration(migrations.Migration):
++    dependencies = [('accounts', '0046_memberpreference_preferred_family_type_and_more')]
++    operations = [migrations.AddField(
++        model_name='memberprofile', name='state',
++        field=models.CharField(max_length=150, blank=True),
++    )]
+diff --git a/backend/apps/accounts/models.py b/backend/apps/accounts/models.py
+index 2ff8a9c..d776039 100644
+--- a/backend/apps/accounts/models.py
++++ b/backend/apps/accounts/models.py
+@@ -943,6 +943,7 @@ class MemberProfile(models.Model):
+     employed_in = models.CharField(max_length=80, blank=True)
+     company = models.CharField(max_length=150, blank=True)
+     annual_income = models.CharField(max_length=50, blank=True)
++    state = models.CharField(max_length=150, blank=True)
+     work_location = models.CharField(max_length=150, blank=True)
+     father_status = models.CharField(max_length=100, blank=True)
+     mother_status = models.CharField(max_length=100, blank=True)
+diff --git a/backend/apps/accounts/serializers.py b/backend/apps/accounts/serializers.py
+index 6066424..00fac54 100644
+--- a/backend/apps/accounts/serializers.py
++++ b/backend/apps/accounts/serializers.py
+@@ -180,7 +180,7 @@ class MemberSerializer(serializers.ModelSerializer):
+                 'religion', 'mother_tongue', 'caste', 'sub_caste', 'gothra',
+                 'star_nakshatra', 'manglik_status', 'highest_education',
+                 'education_detail', 'occupation', 'employed_in', 'company',
+-                'annual_income', 'work_location', 'father_status', 'mother_status',
++                'annual_income', 'work_location', 'state', 'father_status', 'mother_status',
+                 'num_brothers', 'num_sisters', 'family_type', 'family_status',
+                 'family_location', 'about', 'hobbies', 'compatibility',
+                 'submitted_at', 'rejection_reason',
+@@ -679,6 +679,7 @@ class MemberProfileUpdateSerializer(serializers.Serializer):
+     occupation = serializers.CharField(required=False, allow_blank=True)
+     annual_income = serializers.CharField(required=False, allow_blank=True)
+     work_location = serializers.CharField(required=False, allow_blank=True)
++    state = serializers.CharField(required=False, max_length=150, allow_blank=True)
+     family_location = serializers.CharField(required=False, allow_blank=True)
+     family_type = serializers.CharField(required=False, allow_blank=True)
+     family_status = serializers.CharField(required=False, allow_blank=True)
+diff --git a/backend/apps/accounts/services.py b/backend/apps/accounts/services.py
+index db5e45c..316218c 100644
+--- a/backend/apps/accounts/services.py
++++ b/backend/apps/accounts/services.py
+@@ -43,7 +43,7 @@ PROFILE_FIELDS = {
+     'marital_status', 'height', 'weight', 'blood_group', 'complexion', 'religion',
+     'mother_tongue', 'caste', 'sub_caste', 'gothra', 'star_nakshatra',
+     'manglik_status', 'highest_education', 'education_detail', 'occupation',
+-    'employed_in', 'company', 'annual_income', 'work_location', 'father_status',
++    'employed_in', 'company', 'annual_income', 'work_location', 'state', 'father_status',
+     'mother_status', 'num_brothers', 'num_sisters', 'family_type', 'family_status',
+     'family_location', 'about', 'hobbies', 'compatibility',
+ }
+diff --git a/backend/apps/accounts/tests/test_profile_persistence.py b/backend/apps/accounts/tests/test_profile_persistence.py
+index 642c0dc..f5cea89 100644
+--- a/backend/apps/accounts/tests/test_profile_persistence.py
++++ b/backend/apps/accounts/tests/test_profile_persistence.py
+@@ -171,3 +171,22 @@ def test_unknown_profile_field_is_rejected_with_400(member, super_admin):
+         error_keys = set(errors['detail'].keys())
+     # The offending keys must be reported so the client knows they were dropped.
+     assert 'not_a_real_field' in error_keys or 'bogus_payload' in error_keys
++
++
++@pytest.mark.parametrize('endpoint', ['/api/v1/auth/me/', '/api/v1/member-auth/me/'])
++def test_state_and_religion_round_trip_and_clear(member, endpoint):
++    client = auth_client(member)
++    values = {'work_location': 'Pune', 'state': 'Maharashtra', 'religion': 'Hindu'}
++    response = client.patch(endpoint, values, format='json')
++    assert response.status_code == 200, response.content
++    profile = MemberProfile.objects.get(member=member)
++    assert profile.state == 'Maharashtra'
++    for key, value in values.items():
++        assert response.data['data'][key] == value
++        assert client.get(endpoint).data['data'][key] == value
++    response = client.patch(endpoint, {'state': '', 'religion': ''}, format='json')
++    assert response.status_code == 200, response.content
++    refreshed = client.get(endpoint).data['data']
++    assert refreshed['state'] == ''
++    assert refreshed['religion'] == ''
++    assert refreshed['work_location'] == 'Pune'
+diff --git a/backend/apps/accounts/views.py b/backend/apps/accounts/views.py
+index ff7966f..ff3f5c0 100644
+--- a/backend/apps/accounts/views.py
++++ b/backend/apps/accounts/views.py
+@@ -301,7 +301,7 @@ _PROFILE_FIELD_SECTIONS = {
+     'gothra': 'profile', 'star_nakshatra': 'profile', 'manglik_status': 'profile',
+     'highest_education': 'profile', 'education_detail': 'profile',
+     'occupation': 'profile', 'employed_in': 'profile', 'company': 'profile',
+-    'annual_income': 'profile', 'work_location': 'profile', 'family_location': 'profile',
++    'annual_income': 'profile', 'state': 'profile', 'work_location': 'profile', 'family_location': 'profile',
+     'about': 'profile', 'about_me': 'profile', 'current_city': 'profile',
+     'hobbies': 'profile',
+     'father_status': 'family', 'mother_status': 'family', 'num_brothers': 'family',
+diff --git a/backend/apps/profiles/serializers.py b/backend/apps/profiles/serializers.py
+index 5fea3c9..8101474 100644
+--- a/backend/apps/profiles/serializers.py
++++ b/backend/apps/profiles/serializers.py
+@@ -123,6 +123,7 @@ class MemberProfileSummarySerializer(serializers.Serializer):
+     highest_education = serializers.SerializerMethodField()
+     occupation = serializers.SerializerMethodField()
+     annual_income = serializers.SerializerMethodField()
++    state = serializers.SerializerMethodField()
+     work_location = serializers.SerializerMethodField()
+     compatibility_score = serializers.SerializerMethodField()
+     primary_photo = serializers.SerializerMethodField()
+@@ -161,6 +162,9 @@ class MemberProfileSummarySerializer(serializers.Serializer):
+     def get_annual_income(self, member):
+         return self._value(member, "annual_income")
+ 
++    def get_state(self, member):
++        return self._value(member, "state")
++
+     def get_work_location(self, member):
+         return self._value(member, "work_location")
+ 
+diff --git a/frontend/components/profile/new-member-profile-page.tsx b/frontend/components/profile/new-member-profile-page.tsx
+index 192ba2f..7095218 100644
+--- a/frontend/components/profile/new-member-profile-page.tsx
++++ b/frontend/components/profile/new-member-profile-page.tsx
+@@ -470,7 +470,7 @@ export default function NewMemberProfilePage() {
+                 </div>
+                 <div className="p-3 bg-slate-50/70 rounded-xl border border-slate-100">
+                   <span className="text-[10px] font-bold text-slate-400 uppercase block mb-0.5">Location</span>
+-                  <DisplayValue value={p.city || p.work_location || p.location} />
++                  <DisplayValue value={[p.city || p.work_location || (typeof p.location === 'string' ? p.location : p.location?.city), p.state || (typeof p.location === 'object' ? p.location?.state : '')].filter(Boolean).join(', ')} />
+                 </div>
+               </div>
+ 
+diff --git a/frontend/legacy/pages/EditProfilePage.tsx b/frontend/legacy/pages/EditProfilePage.tsx
+index 17eb107..1ae266b 100644
+--- a/frontend/legacy/pages/EditProfilePage.tsx
++++ b/frontend/legacy/pages/EditProfilePage.tsx
+@@ -76,6 +76,7 @@ const sections: Record<Exclude<TabId, 'photos' | 'verification'>, FieldConfig[]>
+     { key: 'profile_created_by', label: 'Profile Created By', placeholder: 'e.g. Self, Parent, Sibling' },
+     { key: 'date_of_birth', label: 'Date of Birth', type: 'date' },
+     { key: 'work_location', label: 'Current City', placeholder: 'Where do you currently live?' },
++    { key: 'state', label: 'State / Region', placeholder: 'e.g. Maharashtra' },
+     { key: 'about', label: 'About Me', type: 'textarea', placeholder: 'Share a thoughtful introduction about your life, values, and aspirations' },
+     { key: 'hobbies', label: 'Hobbies & Interests', placeholder: 'e.g. Reading, travel, music, photography' },
+   ],

@@ -31,6 +31,10 @@ export default function CompareScreen({ route, navigation }: Props) {
   const { currentUser } = useAuth();
   const {
     discoverProfiles,
+    chats,
+    sentInterests,
+    receivedInterests,
+    getProfileById,
     sendInterest,
     cancelInterest,
     getInterestRelationship,
@@ -41,16 +45,74 @@ export default function CompareScreen({ route, navigation }: Props) {
 
   const myProfile = currentUser?.profile;
 
-  // Find the partner candidate to compare against
+  // Filter ONLY connected people (active chats, accepted interests, or mutual matches)
+  const connectedProfiles = React.useMemo(() => {
+    const map = new Map<string, Profile>();
+
+    // 1. Profiles from active chats
+    (chats ?? []).forEach(chat => {
+      if (chat.otherProfile && chat.otherProfile.id) {
+        map.set(chat.otherProfile.id, chat.otherProfile);
+      }
+    });
+
+    // 2. Profiles with accepted interests
+    (sentInterests ?? []).forEach(interest => {
+      if (interest.status === 'accepted') {
+        const p = interest.receiverProfile || getProfileById?.(interest.toUserId);
+        if (p && p.id) map.set(p.id, p);
+      }
+    });
+
+    (receivedInterests ?? []).forEach(interest => {
+      if (interest.status === 'accepted') {
+        const p = interest.senderProfile || getProfileById?.(interest.fromUserId);
+        if (p && p.id) map.set(p.id, p);
+      }
+    });
+
+    // 3. Any cached profile that has a mutual/accepted relationship
+    (discoverProfiles ?? []).forEach(p => {
+      const rel = getInterestRelationship?.(p.id);
+      if (rel && (rel.isMutual || rel.status === 'accepted')) {
+        map.set(p.id, p);
+      }
+    });
+
+    return Array.from(map.values());
+  }, [
+    chats,
+    sentInterests,
+    receivedInterests,
+    discoverProfiles,
+    getProfileById,
+    getInterestRelationship,
+  ]);
+
+  // Find the partner candidate to compare against from connected profiles only
   const paramCandidateId = route.params?.profileId2 ?? route.params?.profileId1;
-  const initialCandidate = paramCandidateId
-    ? discoverProfiles.find(p => p.id === paramCandidateId) ??
-      discoverProfiles[0]
-    : discoverProfiles[0];
+  const initialCandidate = React.useMemo(() => {
+    if (paramCandidateId) {
+      const found = connectedProfiles.find(p => p.id === paramCandidateId);
+      if (found) return found;
+      const cached =
+        (discoverProfiles ?? []).find(p => p.id === paramCandidateId) ??
+        getProfileById?.(paramCandidateId);
+      if (cached) return cached;
+    }
+    return connectedProfiles[0];
+  }, [paramCandidateId, connectedProfiles, discoverProfiles, getProfileById]);
 
   const [candidate, setCandidate] = useState<Profile | undefined>(
     initialCandidate,
   );
+
+  React.useEffect(() => {
+    if (!candidate && initialCandidate) {
+      setCandidate(initialCandidate);
+    }
+  }, [candidate, initialCandidate]);
+
   const [showPicker, setShowPicker] = useState(false);
   const [isSending, setIsSending] = useState(false);
 
@@ -188,9 +250,35 @@ export default function CompareScreen({ route, navigation }: Props) {
         <View style={styles.header}>
           <Text style={styles.title}>Compare Compatibility</Text>
           <Text style={styles.subtitle}>
-            See how well you align with your potential partner
+            See how well you align with your connected partners
           </Text>
         </View>
+
+        {!candidate && connectedProfiles.length === 0 ? (
+          <View style={styles.emptyContainer}>
+            <View style={styles.emptyIconCircle}>
+              <Icon name="people-outline" size={42} color={colors.primary} />
+            </View>
+            <Text style={styles.emptyTitle}>No Connected Partners Yet</Text>
+            <Text style={styles.emptyDescription}>
+              Compatibility comparison is only available for connected partners. Once you and another member connect or accept an interest, you can compare detailed compatibility here.
+            </Text>
+            <TouchableOpacity
+              style={styles.emptyActionBtn}
+              onPress={() => (navigation as any).navigate('Main', { screen: 'Discover' })}
+              activeOpacity={0.85}
+            >
+              <LinearGradient
+                colors={[colors.action, colors.actionDark]}
+                style={styles.emptyActionGradient}
+              >
+                <Icon name="compass-outline" size={18} color="#FFF" style={{ marginRight: 8 }} />
+                <Text style={styles.emptyActionText}>Explore Discover Matches</Text>
+              </LinearGradient>
+            </TouchableOpacity>
+          </View>
+        ) : (
+          <>
 
         {/* Profile Comparison Cards */}
         <View style={styles.candidatesRow}>
@@ -438,6 +526,8 @@ export default function CompareScreen({ route, navigation }: Props) {
             </TouchableOpacity>
           </View>
         )}
+        </>
+        )}
       </ScrollView>
 
       {/* Modal picker for partner profiles */}
@@ -455,10 +545,10 @@ export default function CompareScreen({ route, navigation }: Props) {
                 <View style={styles.pickerHeader}>
                   <View>
                     <Text style={styles.pickerTitle}>
-                      Select Partner to Compare
+                      Select Connected Partner
                     </Text>
                     <Text style={styles.pickerSubtitle}>
-                      Compare your profile with another candidate
+                      Choose from your connected partners ({connectedProfiles.length})
                     </Text>
                   </View>
                   <TouchableOpacity
@@ -469,10 +559,15 @@ export default function CompareScreen({ route, navigation }: Props) {
                   </TouchableOpacity>
                 </View>
                 <FlatList
-                  data={discoverProfiles}
+                  data={connectedProfiles}
                   keyExtractor={item => item.id}
                   contentContainerStyle={{ paddingBottom: 30 }}
                   showsVerticalScrollIndicator={false}
+                  ListEmptyComponent={
+                    <View style={styles.pickerEmpty}>
+                      <Text style={styles.pickerEmptyText}>No connected partners found.</Text>
+                    </View>
+                  }
                   renderItem={({ item }) => {
                     const isCurrent = candidate?.id === item.id;
                     const itemScore = computeCompatibilityScore(item);
@@ -968,5 +1063,64 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '800',
     color: '#A53760',
+  },
+  emptyContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 48,
+    paddingHorizontal: 24,
+    backgroundColor: colors.surface,
+    borderRadius: radii.xxl,
+    marginVertical: 16,
+    ...shadow.card,
+  },
+  emptyIconCircle: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: '#FFEAF2',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 16,
+  },
+  emptyTitle: {
+    fontSize: 20,
+    fontWeight: '800',
+    color: colors.text,
+    marginBottom: 8,
+    textAlign: 'center',
+  },
+  emptyDescription: {
+    fontSize: 14,
+    color: colors.textSecondary,
+    textAlign: 'center',
+    lineHeight: 20,
+    marginBottom: 24,
+  },
+  emptyActionBtn: {
+    width: '100%',
+    borderRadius: radii.pill,
+    overflow: 'hidden',
+  },
+  emptyActionGradient: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 14,
+    paddingHorizontal: 20,
+  },
+  emptyActionText: {
+    color: '#FFFFFF',
+    fontWeight: '700',
+    fontSize: 15,
+  },
+  pickerEmpty: {
+    paddingVertical: 32,
+    alignItems: 'center',
+  },
+  pickerEmptyText: {
+    fontSize: 14,
+    color: colors.textSecondary,
+    textAlign: 'center',
   },
 });

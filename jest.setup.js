@@ -11,12 +11,16 @@ jest.mock('@notifee/react-native', () => ({
   default: {
     requestPermission: jest.fn().mockResolvedValue({ authorizationStatus: 1 }),
     createChannel: jest.fn().mockResolvedValue('default'),
+    getChannel: jest.fn().mockResolvedValue(null),
     displayNotification: jest.fn().mockResolvedValue('notification-id'),
     onForegroundEvent: jest.fn(() => jest.fn()),
+    getInitialNotification: jest.fn().mockResolvedValue(null),
+    cancelNotification: jest.fn().mockResolvedValue(undefined),
+    cancelDisplayedNotifications: jest.fn().mockResolvedValue(undefined),
   },
   AndroidImportance: { HIGH: 4 },
   AuthorizationStatus: { AUTHORIZED: 1 },
-  EventType: { PRESS: 1 },
+  EventType: { PRESS: 1, ACTION_PRESS: 2 },
 }));
 
 jest.mock('@react-native-firebase/messaging', () => ({
@@ -89,6 +93,10 @@ jest.mock('react-native-reanimated', () => {
       out: jest.fn(),
       inOut: jest.fn(),
     },
+    interpolate: jest.fn((val, inR, outR) => outR[0]),
+    Extrapolation: { CLAMP: 'clamp', EXTEND: 'extend', IDENTITY: 'identity' },
+    useEvent: jest.fn(() => jest.fn()),
+    useHandler: jest.fn(() => ({})),
     default: {
       createAnimatedComponent: jest.fn(Component => Component),
       View: 'View',
@@ -98,3 +106,33 @@ jest.mock('react-native-reanimated', () => {
     },
   };
 });
+
+jest.mock('react-native-fast-image', () => {
+  const React = require('react');
+  const { View } = require('react-native');
+  const FastImageComponent = (props: any) => React.createElement(View, props);
+  FastImageComponent.displayName = 'FastImage';
+  FastImageComponent.resizeMode = {
+    contain: 'contain',
+    cover: 'cover',
+    stretch: 'stretch',
+    center: 'center',
+  };
+  FastImageComponent.priority = {
+    low: 'low',
+    normal: 'normal',
+    high: 'high',
+  };
+  FastImageComponent.preload = jest.fn();
+  FastImageComponent.clearMemoryCache = jest.fn().mockResolvedValue(undefined);
+  FastImageComponent.clearDiskCache = jest.fn().mockResolvedValue(undefined);
+  return {
+    __esModule: true,
+    default: FastImageComponent,
+  };
+});
+
+jest.mock('@react-native-firebase/analytics', () => ({
+  getAnalytics: jest.fn(() => ({})),
+  logEvent: jest.fn().mockResolvedValue(undefined),
+}));

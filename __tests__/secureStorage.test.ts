@@ -79,3 +79,23 @@ test('pending identity writes finish before logout removes account IDs', async (
   await pendingClear;
   await expect(getUserIds()).resolves.toBeNull();
 });
+
+test('session replacement compares credentials before deletion', async () => {
+  const { clearTokensForSession } = require('../src/utils/keychain');
+  (Keychain.getGenericPassword as jest.Mock).mockResolvedValue({ password: JSON.stringify({
+    accessToken: 'new-login', refreshToken: 'new-refresh',
+  }) });
+  expect(await clearTokensForSession({ accessToken: 'old', refreshToken: 'old-refresh' })).toBe(false);
+  expect(Keychain.resetGenericPassword).not.toHaveBeenCalled();
+});
+
+test('session replacement clears matching credentials and messaging identity', async () => {
+  const { clearTokensForSession } = require('../src/utils/keychain');
+  (Keychain.getGenericPassword as jest.Mock).mockResolvedValue({ password: JSON.stringify({
+    accessToken: 'current', refreshToken: 'current-refresh',
+  }) });
+  (Keychain.resetGenericPassword as jest.Mock).mockResolvedValue(true);
+  expect(await clearTokensForSession({ accessToken: 'current', refreshToken: 'current-refresh' })).toBe(true);
+  expect(AsyncStorage.setItem).toHaveBeenCalledWith('@mdp/session_logged_out', 'true');
+  expect(AsyncStorage.removeItem).toHaveBeenCalledWith('@mdp/user_ids');
+});

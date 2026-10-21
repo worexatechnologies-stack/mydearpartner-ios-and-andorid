@@ -37,6 +37,7 @@ export interface RegisterPayload {
   mobile?: string;
   first_name?: string;
   last_name?: string;
+  referral_code?: string;
 }
 
 export interface OtpSendPayload {

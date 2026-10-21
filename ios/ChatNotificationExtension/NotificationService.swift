@@ -17,9 +17,18 @@ final class NotificationService: UNNotificationServiceExtension {
     }
     handler = contentHandler
     content = preview
-    if request.content.userInfo["encrypted_text"] != nil {
+    let userInfo = request.content.userInfo
+    let sender = (userInfo["sender_name"] as? String) ?? (userInfo["senderName"] as? String) ?? (userInfo["sender"] as? String)
+    if let sender = sender?.trimmingCharacters(in: .whitespacesAndNewlines), !sender.isEmpty {
+      preview.title = "New message from \(sender)"
+    } else if preview.title.isEmpty || preview.title == "Default" {
       preview.title = "MyDearPartner"
-      preview.body = "You have a new message"
+    }
+
+    if userInfo["encrypted_text"] != nil {
+      preview.body = "You received a new message"
+    } else if let unencrypted = (userInfo["notification_body"] as? String) ?? (userInfo["body"] as? String) ?? (userInfo["text"] as? String), !unencrypted.isEmpty {
+      preview.body = unencrypted
     }
     finish()
   }

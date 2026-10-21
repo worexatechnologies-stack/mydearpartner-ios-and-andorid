@@ -100,7 +100,11 @@ export default function RootNavigator() {
             component={EditProfileScreen}
             options={{ headerShown: false }}
           />
-          <Stack.Screen name="Chat" component={ChatScreen} />
+          <Stack.Screen
+            name="Chat"
+            component={ChatScreen}
+            options={{ headerShown: false }}
+          />
           <Stack.Screen
             name="Membership"
             component={MembershipScreen}
@@ -134,7 +138,7 @@ export default function RootNavigator() {
           <Stack.Screen
             name="Notifications"
             component={NotificationsScreen}
-            options={{ title: 'Notifications' }}
+            options={{ headerShown: false }}
           />
         </>
       )}

@@ -1,0 +1,4 @@
+{
+  "java.gradle.buildServer.enabled": "off",
+  "gradle.autoDetect": "off"
+}

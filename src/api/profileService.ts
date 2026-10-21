@@ -14,6 +14,7 @@
  */
 
 import { Profile } from '../types/models';
+import { websiteProfileFields } from '../utils/websiteProfileForm';
 import { ProfilePhotoRecord, normalizeProfilePhoto, resolveProfilePhotoUrl, sanitizePhotoUpload } from '../utils/profilePhotos';
 import { del,get,patch,upload } from './apiClient';
 import { BackendProfile,ProfileUpdatePayload,SearchFilters } from './types';
@@ -33,9 +34,9 @@ export function mapProfile(bp: BackendProfile): Profile {
   const primaryPhoto = normalizeProfilePhoto(bp.primary_photo);
 
   let finalCity =
-    bp.work_location ??
-    bp.current_city ??
     bp.city ??
+    bp.current_city ??
+    bp.work_location ??
     (bp as any).location?.city ??
     (bp as any).address?.city ??
     (bp as any).residence ??
@@ -76,6 +77,11 @@ export function mapProfile(bp: BackendProfile): Profile {
   const lifestyle = bp.lifestyle;
 
   return {
+    websiteFields: Object.fromEntries(websiteProfileFields.flatMap(({ key }) => {
+      const value = (bp as unknown as Record<string, unknown>)[key];
+      return typeof value === 'string' || typeof value === 'number' || value === null ||
+        (Array.isArray(value) && value.every(item => typeof item === 'string')) ? [[key, value]] : [];
+    })),
     id: String(bp.id),
     userId: profileText(bp.user_id) || profileText((bp as any).user) || String(bp.id),
     name:
@@ -93,7 +99,8 @@ export function mapProfile(bp: BackendProfile): Profile {
     height: profileText(bp.height ?? ''),
     about: profileText(bp.about ?? bp.about_me ?? ''),
     // Handle backend returning array of strings or array of objects for photos
-    photo: primaryPhoto?.uri || resolvePhoto(bp.photo) || (Array.isArray(bp.photos) && bp.photos.length
+    photo: primaryPhoto?.uri || resolvePhoto(bp.primary_photo) ||
+      resolvePhoto(bp.primary_photo?.image_url || bp.primary_photo?.url) || resolvePhoto(bp.photo) || (Array.isArray(bp.photos) && bp.photos.length
       ? resolvePhoto(typeof bp.photos[0] === 'string' ? bp.photos[0] : bp.photos[0]?.image_url || bp.photos[0]?.url || '')
       : ''),
     photoIds: Object.fromEntries([
@@ -120,24 +127,24 @@ export function mapProfile(bp: BackendProfile): Profile {
     isOnline: bp.is_online,
     diet: bp.diet,
     income: bp.annual_income ?? bp.income,
-    motherTongue: bp.mother_tongue,
+    motherTongue: bp.mother_tongue ?? bp.motherTongue,
     horoscope: bp.horoscope,
-    maritalStatus: bp.marital_status,
+    maritalStatus: bp.marital_status ?? bp.maritalStatus,
     email: bp.email,
-    mobileNumber: bp.mobile_number,
+    mobileNumber: bp.mobile_number ?? bp.mobileNumber ?? (bp as any).mobile ?? (bp as any).phone,
     caste: bp.caste,
-    subCaste: bp.sub_caste,
+    subCaste: bp.sub_caste ?? bp.subCaste,
     gothra: bp.gothra,
-    starNakshatra: bp.star_nakshatra,
-    manglikStatus: bp.manglik_status,
-    bloodGroup: bp.blood_group,
+    starNakshatra: bp.star_nakshatra ?? bp.starNakshatra,
+    manglikStatus: bp.manglik_status ?? bp.manglikStatus,
+    bloodGroup: bp.blood_group ?? bp.bloodGroup,
     complexion: bp.complexion,
     weight: bp.weight,
-    fatherStatus: bp.father_status,
-    motherStatus: bp.mother_status,
-    familyType: bp.family_type,
-    familyStatus: bp.family_status,
-    familyLocation: bp.family_location,
+    fatherStatus: bp.father_status ?? bp.fatherStatus,
+    motherStatus: bp.mother_status ?? bp.motherStatus,
+    familyType: bp.family_type ?? bp.familyType,
+    familyStatus: bp.family_status ?? bp.familyStatus,
+    familyLocation: bp.family_location ?? bp.familyLocation,
     isPremium,
     currentPlanSlug: planSlug,
     contactUnlocks,
@@ -174,10 +181,39 @@ export async function getMyProfile(): Promise<Profile> {
 export async function updateMyProfile(
   payload: ProfileUpdatePayload,
 ): Promise<Profile> {
-  await patch<BackendProfile>('/auth/me/', payload);
-  // The PATCH endpoint often just returns {success: true} instead of the full profile.
-  // Explicitly fetch the fresh profile to ensure isProfileComplete receives correct data.
-  return getMyProfile();
+  const currentPayload: Record<string, any> = { ...payload };
+
+  // Send the website's supported wire names once. Keep explicit empty values
+  // so clearing a field also reaches the shared database.
+  const aliases: Record<string, string> = {
+    city: 'work_location', current_city: 'work_location',
+    profession: 'occupation', education: 'highest_education',
+    about_me: 'about', interests: 'hobbies', income: 'annual_income',
+    mobile: 'mobile_number', phone: 'mobile_number',
+  };
+  for (const [alias, canonical] of Object.entries(aliases)) {
+    if (currentPayload[canonical] === undefined && currentPayload[alias] !== undefined) {
+      currentPayload[canonical] = currentPayload[alias];
+    }
+    delete currentPayload[alias];
+  }
+
+  if (currentPayload.name !== undefined && currentPayload.first_name === undefined) {
+    const parts = String(currentPayload.name).trim().split(/\s+/);
+    currentPayload.first_name = parts[0];
+    currentPayload.last_name = parts.slice(1).join(' ');
+  }
+
+  delete currentPayload.name;
+  // Never discard a rejected member edit and report a successful save.
+  await patch<BackendProfile>('/auth/me/', currentPayload as ProfileUpdatePayload);
+  const saved = await getMyProfile();
+  for (const key of ['state', 'religion'] as const) {
+    if (payload[key] !== undefined && saved[key] !== payload[key]) {
+      throw new Error(`Your ${key} was not saved by the website. Please try again or contact support.`);
+    }
+  }
+  return saved;
 }
 
 /**
@@ -255,8 +291,16 @@ export async function getDiscoverProfiles(filters?: SearchFilters): Promise<{
  * Get a specific profile by ID.
  */
 export async function getProfileById(id: string): Promise<Profile> {
-  const data = await get<BackendProfile>(`/profiles/${id}/`);
-  return mapProfile(data);
+  const response = await get<any>(`/profiles/${encodeURIComponent(id)}/`);
+  // Deployments may wrap the detail in data, profile, or member. Unwrap
+  // before mapping; mapProfile's list sentinel must never become a detail.
+  const data = response?.data ?? response;
+  const detail = data?.profile ?? data?.member ?? data?.user ?? data;
+  const profile = mapProfile(detail);
+  if (!profile.id || !profile.name.trim()) {
+    throw new Error('Could not load this profile. Please try again.');
+  }
+  return profile;
 }
 
 /**

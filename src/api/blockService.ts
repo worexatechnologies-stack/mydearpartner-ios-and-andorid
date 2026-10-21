@@ -23,17 +23,16 @@ export const blockService = {
 
   /**
    * Check if the given profile has blocked the current user.
-   * Returns false gracefully if the endpoint is not yet available (404/403).
+   * Returns null when the status cannot be confirmed; unknown never means unblocked.
    */
-  checkIfBlockedBy: async (profileId: string): Promise<boolean> => {
+  checkIfBlockedBy: async (profileId: string): Promise<boolean | null> => {
     try {
       const res = await get<{ blocked: boolean }>(
-        `/blocks/check/?profile_id=${profileId}`,
+        `/blocks/check/?profile_id=${encodeURIComponent(profileId)}`,
       );
-      return res?.blocked === true;
+      return typeof res?.blocked === 'boolean' ? res.blocked : null;
     } catch {
-      // Endpoint not available — graceful fallback
-      return false;
+      return null;
     }
   },
 };

@@ -22,9 +22,13 @@ import RootNavigator from './src/navigation/RootNavigator';
 import { navigationRef } from './src/navigation/navigationRef';
 import { handleIncomingPush } from './src/services/IncomingPushService';
 import {
-handleNotificationPress,
-setupNotifeeForegroundHandler,
+  ensureChannels,
+  handleInitialNotification,
+  handleNotificationPress,
+  requestPermission,
+  setupNotifeeForegroundHandler,
 } from './src/services/PushNotificationService';
+import analyticsService from './src/services/analyticsService';
 
 const customDefaultTheme = {
   ...DefaultTheme,
@@ -68,8 +72,20 @@ function SessionDataProvider({ children }: { children: React.ReactNode }) {
 
 function App() {
   useEffect(() => {
+    // Initialize analytics pipeline (tracks first_open once)
+    analyticsService.init().catch(() => {});
+
+    // Ensure system notification channels and permissions are ready
+    ensureChannels().catch(err =>
+      console.warn('[App] ensureChannels error:', err),
+    );
+    requestPermission().catch(err =>
+      console.warn('[App] requestPermission error:', err),
+    );
+
     // Listen for Notifee local/system notification taps
     const unsubNotifee = setupNotifeeForegroundHandler();
+    handleInitialNotification().catch(() => {});
 
     // Listen for FCM messages received in the foreground
     let active = true;

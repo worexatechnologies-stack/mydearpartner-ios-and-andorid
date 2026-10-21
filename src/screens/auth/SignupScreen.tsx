@@ -4,7 +4,6 @@ import React, { useRef, useState } from 'react';
 import {
   Alert,
   Image,
-  KeyboardAvoidingView,
   Platform,
   Pressable,
   ScrollView,
@@ -21,7 +20,6 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Icon from 'react-native-vector-icons/Ionicons';
 import { KeyboardAwareScrollView } from 'react-native-keyboard-aware-scroll-view';
 import { Calendar, Lock, Mail, MapPin, Phone, User as UserIcon, Check, ChevronDown, X } from 'lucide-react-native';
-import AppButton from '../../components/AppButton';
 import SafetyCenter, { SafetyPage } from '../../components/SafetyCenter';
 import legal from '../../config/legal.json';
 import { useAuth } from '../../context/AuthContext';
@@ -29,6 +27,7 @@ import { AuthStackParamList } from '../../navigation/types';
 import { colors, spacing, radii, typeScale } from '../../theme/theme';
 import { adultDateOfBirth } from '../../utils/ageEligibility';
 import { saveSavedCredentials } from '../../utils/credentialStorage';
+import analyticsService from '../../services/analyticsService';
 
 const PROFILE_FOR_OPTIONS = [
   { label: 'Myself', value: 'Self' },
@@ -134,6 +133,7 @@ export default function SignupScreen() {
   const [city, setCity] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+  const [referralCode, setReferralCode] = useState('');
   
   const [safetyPage, setSafetyPage] = useState<SafetyPage | null>(null);
   const [agreed, setAgreed] = useState(false);
@@ -174,9 +174,17 @@ export default function SignupScreen() {
         mother_tongue: motherTongue,
         city: city.trim(),
         gender: gender,
+        referral_code: referralCode.trim() ? referralCode.trim().toUpperCase() : undefined,
       });
       if (result.ok) {
         await saveSavedCredentials(email.trim(), password).catch(() => {});
+        analyticsService
+          .trackRegistrationComplete({
+            source: 'organic_signup',
+            platform: Platform.OS,
+            cohort: city.trim() || 'unknown',
+          })
+          .catch(() => {});
       } else {
         Alert.alert('Could not create account', result.error || 'Please try again.');
       }
@@ -224,7 +232,7 @@ export default function SignupScreen() {
               <Icon name="arrow-back" size={20} color="#FFFFFF" />
             </Pressable>
             <View style={styles.brand}>
-              <Image source={require('../../assets/logo.png')} style={styles.brandLogo} resizeMode="contain" />
+              <Image source={require('../../assets/images/logo.png')} style={styles.brandLogo} resizeMode="contain" />
               <View>
                 <Text style={styles.brandName}>MyDear<Text style={{ color: '#FF1E66' }}>Partner</Text></Text>
               </View>
@@ -373,6 +381,16 @@ export default function SignupScreen() {
                   <Icon name={showPassword ? 'eye-outline' : 'eye-off-outline'} size={20} color="rgba(255,255,255,0.5)" />
                 </Pressable>
               }
+            />
+
+            <DarkInput
+              icon={<Icon name="gift-outline" size={20} color="rgba(255,255,255,0.5)" />}
+              placeholder="Referral code (Optional)"
+              value={referralCode}
+              onChangeText={(text: string) => setReferralCode(text.toUpperCase())}
+              autoCapitalize="characters"
+              autoCorrect={false}
+              editable={!isLoading}
             />
 
             <Pressable 

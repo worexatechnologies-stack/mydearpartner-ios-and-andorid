@@ -1,9 +1,18 @@
 module.exports = {
   root: true,
   extends: '@react-native',
-  overrides: [{ files: ['jest.setup.js'], env: { jest: true } }],
-  rules: {
-    '@typescript-eslint/no-unused-vars': 'warn',
-    'react-hooks/exhaustive-deps': 'warn'
-  }
+  env: {
+    jest: true,
+  },
+  ignorePatterns: [
+    'node_modules/',
+    'android/',
+    'ios/',
+    'backend/',
+    'scratch/',
+    'scripts/',
+    '*.config.js',
+    'jest.setup.js',
+  ],
 };
+

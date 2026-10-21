@@ -1,5 +1,5 @@
 import React, { useEffect } from 'react';
-import { StyleSheet, View, Text, StatusBar, useWindowDimensions } from 'react-native';
+import { StyleSheet, View, Text, StatusBar } from 'react-native';
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
@@ -12,7 +12,6 @@ import { colors, spacing } from '../theme/theme';
 import { LogoMark } from '../components/LogoMark';
 
 export default function ProcessingScreen({ message = 'Processing...' }: { message?: string }) {
-  const { width } = useWindowDimensions();
 
   // Animation values
   const pulseScale = useSharedValue(0.9);
@@ -45,7 +44,7 @@ export default function ProcessingScreen({ message = 'Processing...' }: { messag
       -1,
       false
     );
-  }, []);
+  }, [logoRotation, pulseOpacity, pulseScale]);
 
   const ringAnimatedStyle = useAnimatedStyle(() => ({
     transform: [{ scale: pulseScale.value }],

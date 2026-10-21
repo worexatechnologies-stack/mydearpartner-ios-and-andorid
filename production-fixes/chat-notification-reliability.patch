@@ -1,0 +1,169 @@
+diff --git a/backend/apps/notifications/push.py b/backend/apps/notifications/push.py
+index c30a72d..c6f7923 100644
+--- a/backend/apps/notifications/push.py
++++ b/backend/apps/notifications/push.py
+@@ -10,6 +10,7 @@ import logging
+ import os
+ 
+ from celery import shared_task
++from celery.utils.time import get_exponential_backoff_interval
+ from django.conf import settings
+ from django.utils import timezone
+ import firebase_admin
+@@ -143,20 +144,15 @@ def _handle_token_error(token, user_id, exc):
+     
+     CRITICAL: Never delete device records for InvalidArgumentError or general exceptions.
+     InvalidArgumentError indicates a malformed payload or field, NOT an invalid token.
+-    Only UnregisteredError / NOT_FOUND / REGISTRATION-TOKEN-NOT-REGISTERED confirms the token is dead.
++    Only explicit token-unregistered errors confirm the token is dead.
+     """
+-    is_unregistered = isinstance(exc, (messaging.UnregisteredError, exceptions.NotFoundError))
+-    err_str = str(exc).upper()
++    # NOT_FOUND can describe a missing project/resource, and credential mismatch
++    # is a server configuration problem. Neither proves this token was revoked.
+     err_code = str(getattr(exc, 'code', '') or '').upper()
+-
+-    if (
+-        is_unregistered
+-        or 'UNREGISTERED' in err_code
+-        or 'NOT_FOUND' in err_code
+-        or 'REGISTRATION-TOKEN-NOT-REGISTERED' in err_str
+-        or 'MISMATCHED-CREDENTIAL' in err_str
+-        or err_code == 'UNREGISTERED'
+-    ):
++    if isinstance(exc, messaging.UnregisteredError) or err_code in {
++        'UNREGISTERED', 'REGISTRATION_TOKEN_NOT_REGISTERED',
++        'MESSAGING/REGISTRATION-TOKEN-NOT-REGISTERED',
++    }:
+         from apps.notifications.models import Device
+ 
+         deleted_count, _ = Device.objects.filter(token=token).delete()
+@@ -562,18 +558,14 @@ def send_general_push_to_user(
+     return results
+ 
+ 
+-@shared_task(
+-    bind=True,
+-    max_retries=3,
+-    autoretry_for=(
+-        exceptions.UnavailableError,
+-        exceptions.DeadlineExceededError,
+-        exceptions.InternalError,
+-    ),
+-    retry_backoff=True,
+-    retry_backoff_max=60,
+-    retry_jitter=True,
+-)
++def _chat_retry_countdown(retries):
++    # Manual self.retry() does not use the decorator's autoretry backoff options.
++    return max(1, get_exponential_backoff_interval(
++        factor=5, retries=retries, maximum=60, full_jitter=True,
++    ))
++
++
++@shared_task(bind=True, max_retries=3)
+ def deliver_chat_push_task(
+     self,
+     recipient_id,
+@@ -599,15 +591,15 @@ def deliver_chat_push_task(
+             "Firebase app unavailable in worker for recipient_id=%s. Will retry if attempts remain.",
+             recipient_id,
+         )
+-        if self.request.retries < self.max_retries:
+-            raise self.retry(
+-                exc=RuntimeError("Firebase Admin SDK not initialized in worker"),
+-                countdown=5 * (2 ** self.request.retries),
+-            )
+-        return []
++        # Exhaustion must surface as a failed task, not a successful empty result.
++        raise self.retry(
++            exc=RuntimeError("Firebase Admin SDK not initialized in worker"),
++            countdown=_chat_retry_countdown(self.request.retries),
++        )
+ 
+     results = []
+     transient_exc = None
++    permanent_exc = None
+     for dev in devices:
+         try:
+             res = send_chat_push(
+@@ -627,10 +619,13 @@ def deliver_chat_push_task(
+         except Exception as err:
+             logger.error("Non-retryable push error for device %s (user=%s): %s", dev.id, recipient_id, err)
+             results.append(None)
++            permanent_exc = err
+ 
+     if transient_exc:
+         # Re-raise so Celery retries remaining devices (already-sent devices skipped via cache deduplication)
+-        raise self.retry(exc=transient_exc)
++        raise self.retry(exc=transient_exc, countdown=_chat_retry_countdown(self.request.retries))
++    if permanent_exc:
++        raise permanent_exc
+ 
+     return results
+ 
+diff --git a/backend/apps/notifications/tests.py b/backend/apps/notifications/tests.py
+index 30dd240..0530010 100644
+--- a/backend/apps/notifications/tests.py
++++ b/backend/apps/notifications/tests.py
+@@ -649,3 +649,60 @@ class DeviceRegistrationAndPushTests(TestCase):
+ 
+ 
+ 
++    def test_configuration_errors_never_delete_registered_devices(self):
++        from apps.notifications.models import Device
++        from apps.notifications.push import _handle_token_error
++        from firebase_admin import exceptions, messaging
++        device = Device.objects.create(user=self.member1, token='configuration-error-test-token')
++        errors = [exceptions.PermissionDeniedError('MISMATCHED-CREDENTIAL'),
++                  exceptions.NotFoundError('Project resource not found'),
++                  exceptions.InvalidArgumentError('Invalid payload'),
++                  messaging.SenderIdMismatchError('Sender does not match')]
++        for error in errors:
++            with self.subTest(error=type(error).__name__):
++                self.assertFalse(_handle_token_error(device.token, self.member1.pk, error))
++                self.assertTrue(Device.objects.filter(pk=device.pk).exists())
++
++    def test_manual_chat_retry_uses_bounded_exponential_jitter(self):
++        from apps.notifications.push import _chat_retry_countdown
++        with patch('apps.notifications.push.get_exponential_backoff_interval', return_value=12) as backoff:
++            self.assertEqual(_chat_retry_countdown(2), 12)
++            backoff.assert_called_once_with(factor=5, retries=2, maximum=60, full_jitter=True)
++        with patch('apps.notifications.push.get_exponential_backoff_interval', return_value=0):
++            self.assertEqual(_chat_retry_countdown(0), 1)
++
++    def test_transient_task_failure_retries_with_explicit_countdown(self):
++        from celery.exceptions import Retry
++        from firebase_admin import exceptions
++        from apps.notifications.models import Device
++        from apps.notifications.push import deliver_chat_push_task
++        Device.objects.create(user=self.member1, token='transient-test-token')
++        with patch('apps.notifications.push.firebase_app', return_value=object()), \
++             patch('apps.notifications.push.send_chat_push', side_effect=exceptions.UnavailableError('temporary')), \
++             patch('apps.notifications.push._chat_retry_countdown', return_value=7), \
++             patch.object(deliver_chat_push_task, 'retry', side_effect=Retry()) as retry:
++            with self.assertRaises(Retry):
++                deliver_chat_push_task.run(str(self.member1.pk), message_id='retry-message')
++        self.assertEqual(retry.call_args.kwargs['countdown'], 7)
++
++    def test_unavailable_firebase_exhaustion_is_failure(self):
++        from apps.notifications.models import Device
++        from apps.notifications.push import deliver_chat_push_task
++        Device.objects.create(user=self.member1, token='no-firebase-test-token')
++        deliver_chat_push_task.push_request(retries=deliver_chat_push_task.max_retries, called_directly=True)
++        try:
++            with patch('apps.notifications.push.firebase_app', return_value=None):
++                with self.assertRaisesRegex(RuntimeError, 'not initialized'):
++                    deliver_chat_push_task.run(str(self.member1.pk))
++        finally:
++            deliver_chat_push_task.pop_request()
++
++    def test_non_retryable_task_failure_is_not_reported_as_success(self):
++        from firebase_admin import exceptions
++        from apps.notifications.models import Device
++        from apps.notifications.push import deliver_chat_push_task
++        Device.objects.create(user=self.member1, token='invalid-payload-task-token')
++        with patch('apps.notifications.push.firebase_app', return_value=object()), \
++             patch('apps.notifications.push.send_chat_push', side_effect=exceptions.InvalidArgumentError('Invalid payload')):
++            with self.assertRaises(exceptions.InvalidArgumentError):
++                deliver_chat_push_task.run(str(self.member1.pk), message_id='invalid-message')

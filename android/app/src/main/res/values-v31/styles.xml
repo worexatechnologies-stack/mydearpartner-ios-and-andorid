@@ -1,0 +1,11 @@
+<resources>
+    <!-- Android 12+ (API 31+) native splash screen configuration -->
+    <style name="SplashTheme" parent="SplashThemeBase">
+        <item name="android:windowSplashScreenBackground">#FAF8F7</item>
+        <item name="android:windowSplashScreenAnimatedIcon">@drawable/splash_logo</item>
+        <item name="android:windowLightStatusBar">true</item>
+        <item name="android:windowLightNavigationBar">true</item>
+        <item name="android:statusBarColor">#FAF8F7</item>
+        <item name="android:navigationBarColor">#FAF8F7</item>
+    </style>
+</resources>

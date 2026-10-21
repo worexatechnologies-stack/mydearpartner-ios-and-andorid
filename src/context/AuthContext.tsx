@@ -27,7 +27,7 @@ useRef,
 useState,
 } from 'react';
 import { AppState } from 'react-native';
-import { registerUnauthenticatedHandler } from '../api/apiClient';
+import { get, registerUnauthenticatedHandler } from '../api/apiClient';
 import * as AuthService from '../api/authService';
 import * as ProfileService from '../api/profileService';
 import { ProfileUpdatePayload } from '../api/types';
@@ -37,13 +37,20 @@ markMessagingCryptoLoggedOut,
 } from '../services/MessagingCryptoLifecycle';
 import * as PushNotificationService from '../services/PushNotificationService';
 import { Profile,User } from '../types/models';
-import { getMemberUserIdFromToken } from '../utils/jwt';
+import { showPendingSessionNotice } from '../services/SessionNoticeService';
+import { decodeJwtPayload, getMemberUserIdFromToken } from '../utils/jwt';
 import {
 clearTokens,
 clearUserIds,
 loadTokens,
 saveUserIds,
 } from '../utils/keychain';
+import {
+  accountStorageKey,
+  getItem,
+  setItem,
+  StorageKeys,
+} from '../utils/storage';
 
 interface AuthContextValue {
   isLoading: boolean;
@@ -68,6 +75,7 @@ interface AuthContextValue {
       mother_tongue?: string;
       city?: string;
       gender?: string;
+      referral_code?: string;
     },
   ) => Promise<{ ok: boolean; error?: string }>;
   logout: () => Promise<void>;
@@ -119,6 +127,47 @@ export function isProfileComplete(profile: Profile): boolean {
   );
 }
 
+function mergeWithCachedProfile(serverProfile: Profile, cached?: Partial<Profile> | null): Profile {
+  if (!cached) return serverProfile;
+  const matrimonialKeys: (keyof Profile)[] = [
+    'caste',
+    'subCaste',
+    'gothra',
+    'starNakshatra',
+    'manglikStatus',
+    'fatherStatus',
+    'motherStatus',
+    'familyType',
+    'familyStatus',
+    'familyLocation',
+    'maritalStatus',
+    'motherTongue',
+    'horoscope',
+    'email',
+    'mobileNumber',
+    'diet',
+  ];
+  const mergedMatrimonial: Partial<Profile> = {};
+  for (const k of matrimonialKeys) {
+    const sVal = (serverProfile as any)[k];
+    const cVal = (cached as any)[k];
+    if ((sVal === undefined || sVal === null || sVal === '') && cVal !== undefined && cVal !== null && cVal !== '') {
+      (mergedMatrimonial as any)[k] = cVal;
+    }
+  }
+  const mergedLifestyle = {
+    ...(cached?.lifestyle || {}),
+    ...(serverProfile?.lifestyle || {}),
+  };
+  return {
+    ...serverProfile,
+    ...mergedMatrimonial,
+    ...(cached?.lifestyle || serverProfile?.lifestyle
+      ? { lifestyle: mergedLifestyle }
+      : {}),
+  };
+}
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [isLoading, setIsLoading] = useState(true);
   const [sessionError, setSessionError] = useState<string | null>(null);
@@ -135,6 +184,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setIsLoading(false);
       setCurrentUser(null);
       markMessagingCryptoLoggedOut();
+      showPendingSessionNotice().catch(() => {});
       clearUserIds().catch(() => console.warn('[Auth] Could not clear messaging identity'));
     });
   }, []);
@@ -191,7 +241,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (revision !== sessionRevision.current) return;
       await initializeMessagingCrypto();
       if (revision !== sessionRevision.current) return;
-      setCurrentUser(buildUser(profile.userId || profile.id, profile.email ?? '', isProfileComplete(profile), profile));
+      const storageKey = profile.userId || profile.id;
+      let cached = await getItem<Partial<Profile>>(
+        accountStorageKey(StorageKeys.MY_PROFILE, storageKey),
+      );
+      if (!cached && profile.id && profile.id !== storageKey) {
+        cached = await getItem<Partial<Profile>>(
+          accountStorageKey(StorageKeys.MY_PROFILE, profile.id),
+        );
+      }
+      const fullProfile = mergeWithCachedProfile(profile, cached);
+      setCurrentUser(buildUser(profile.userId || profile.id, (fullProfile.email || profile.email) ?? '', isProfileComplete(fullProfile), fullProfile));
       registerPushNotifications();
     } catch (error) {
       if (revision !== sessionRevision.current) return;
@@ -209,6 +269,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
     } finally {
       if (revision === sessionRevision.current) setIsLoading(false);
+      showPendingSessionNotice().catch(() => {});
     }
   }, [registerPushNotifications]);
 
@@ -281,6 +342,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         mother_tongue?: string;
         city?: string;
         gender?: string;
+        referral_code?: string;
       },
     ): Promise<{ ok: boolean; error?: string }> => {
       if (!email.trim() || !password) {
@@ -377,7 +439,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         const payload: ProfileUpdatePayload = {
           gender: capitalizedGender,
           age: profile.age,
-          state: profile.state,
           religion: profile.religion,
           company: profile.company,
           height: profile.height,
@@ -461,14 +522,114 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           payload.mother_tongue = partial.motherTongue;
         if (partial.maritalStatus !== undefined)
           payload.marital_status = partial.maritalStatus;
+        if (partial.caste !== undefined) payload.caste = partial.caste;
+        if (partial.subCaste !== undefined) payload.sub_caste = partial.subCaste;
+        if (partial.gothra !== undefined) payload.gothra = partial.gothra;
+        if (partial.starNakshatra !== undefined)
+          payload.star_nakshatra = partial.starNakshatra;
+        if (partial.manglikStatus !== undefined)
+          payload.manglik_status = partial.manglikStatus;
+        if (partial.fatherStatus !== undefined)
+          payload.father_status = partial.fatherStatus;
+        if (partial.motherStatus !== undefined)
+          payload.mother_status = partial.motherStatus;
+        if (partial.familyType !== undefined)
+          payload.family_type = partial.familyType;
+        if (partial.familyStatus !== undefined)
+          payload.family_status = partial.familyStatus;
+        if (partial.familyLocation !== undefined)
+          payload.family_location = partial.familyLocation;
+        if (partial.lifestyle !== undefined)
+          payload.lifestyle = {
+            diet: partial.lifestyle.diet,
+            smoking: partial.lifestyle.smoking,
+            drinking: partial.lifestyle.drinking,
+            living_arrangement: partial.lifestyle.livingArrangement,
+          };
+
+        if (partial.email !== undefined) {
+          payload.email = partial.email.trim();
+        }
+        if (partial.mobileNumber !== undefined) {
+          payload.mobile_number = partial.mobileNumber.trim();
+          payload.mobile = partial.mobileNumber.trim();
+          payload.phone = partial.mobileNumber.trim();
+        }
 
         const updated = await ProfileService.updateMyProfile(payload);
         if (revision !== sessionRevision.current) return;
-        setCurrentUser(prev =>
-          prev?.id === currentUser.id
-            ? buildUser(prev.id, prev.email, isProfileComplete(updated), updated)
-            : prev,
-        );
+        setCurrentUser(prev => {
+          if (prev?.id !== currentUser.id) return prev;
+
+          const getMatrimonialVal = <K extends keyof Profile>(key: K): Profile[K] | undefined => {
+            if (partial[key] !== undefined) return partial[key];
+            if (updated[key] !== undefined && updated[key] !== null && updated[key] !== '') return updated[key];
+            if (prev.profile?.[key] !== undefined && prev.profile?.[key] !== null && prev.profile?.[key] !== '') return prev.profile[key];
+            return undefined;
+          };
+
+          const casteVal = getMatrimonialVal('caste');
+          const subCasteVal = getMatrimonialVal('subCaste');
+          const gothraVal = getMatrimonialVal('gothra');
+          const starNakshatraVal = getMatrimonialVal('starNakshatra');
+          const manglikStatusVal = getMatrimonialVal('manglikStatus');
+          const fatherStatusVal = getMatrimonialVal('fatherStatus');
+          const motherStatusVal = getMatrimonialVal('motherStatus');
+          const familyTypeVal = getMatrimonialVal('familyType');
+          const familyStatusVal = getMatrimonialVal('familyStatus');
+          const familyLocationVal = getMatrimonialVal('familyLocation');
+          const maritalStatusVal = getMatrimonialVal('maritalStatus');
+          const motherTongueVal = getMatrimonialVal('motherTongue');
+          const horoscopeVal = getMatrimonialVal('horoscope');
+          const mobileNumberVal = getMatrimonialVal('mobileNumber');
+          const emailVal = getMatrimonialVal('email');
+
+          const profileMerged: Profile = {
+            ...updated,
+            ...(casteVal !== undefined ? { caste: casteVal } : {}),
+            ...(subCasteVal !== undefined ? { subCaste: subCasteVal } : {}),
+            ...(gothraVal !== undefined ? { gothra: gothraVal } : {}),
+            ...(starNakshatraVal !== undefined ? { starNakshatra: starNakshatraVal } : {}),
+            ...(manglikStatusVal !== undefined ? { manglikStatus: manglikStatusVal } : {}),
+            ...(fatherStatusVal !== undefined ? { fatherStatus: fatherStatusVal } : {}),
+            ...(motherStatusVal !== undefined ? { motherStatus: motherStatusVal } : {}),
+            ...(familyTypeVal !== undefined ? { familyType: familyTypeVal } : {}),
+            ...(familyStatusVal !== undefined ? { familyStatus: familyStatusVal } : {}),
+            ...(familyLocationVal !== undefined ? { familyLocation: familyLocationVal } : {}),
+            ...(maritalStatusVal !== undefined ? { maritalStatus: maritalStatusVal } : {}),
+            ...(motherTongueVal !== undefined ? { motherTongue: motherTongueVal } : {}),
+            ...(horoscopeVal !== undefined ? { horoscope: horoscopeVal } : {}),
+            ...(partial.lifestyle !== undefined || prev.profile?.lifestyle || updated.lifestyle
+              ? {
+                  lifestyle: {
+                    ...(prev.profile?.lifestyle || {}),
+                    ...(updated.lifestyle || {}),
+                    ...(partial.lifestyle || {}),
+                  },
+                }
+              : {}),
+            ...(emailVal !== undefined ? { email: String(emailVal).trim() } : {}),
+            ...(mobileNumberVal !== undefined ? { mobileNumber: String(mobileNumberVal).trim() } : {}),
+          };
+
+          const userKey = prev.id;
+          const profileKey = profileMerged.userId || profileMerged.id;
+          setItem(accountStorageKey(StorageKeys.MY_PROFILE, userKey), profileMerged).catch(() => {});
+          if (profileKey && profileKey !== userKey) {
+            setItem(accountStorageKey(StorageKeys.MY_PROFILE, profileKey), profileMerged).catch(() => {});
+          }
+
+          const effectiveEmail =
+            partial.email !== undefined
+              ? partial.email.trim()
+              : updated.email || prev.email || currentUser.email;
+          return buildUser(
+            prev.id,
+            effectiveEmail,
+            isProfileComplete(profileMerged),
+            profileMerged,
+          );
+        });
       } catch (err: any) {
         console.warn('[AuthContext] updateProfile error:', err?.message);
         throw err;
@@ -484,9 +645,25 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     try {
       const profile = await ProfileService.getMyProfile();
       if (revision !== sessionRevision.current) return;
+      const storageKey = currentUser?.id || profile.userId || profile.id;
+      let cached = await getItem<Partial<Profile>>(
+        accountStorageKey(StorageKeys.MY_PROFILE, storageKey),
+      );
+      if (!cached && profile.id && profile.id !== storageKey) {
+        cached = await getItem<Partial<Profile>>(
+          accountStorageKey(StorageKeys.MY_PROFILE, profile.id),
+        );
+      }
+      if (!cached && profile.userId && profile.userId !== storageKey) {
+        cached = await getItem<Partial<Profile>>(
+          accountStorageKey(StorageKeys.MY_PROFILE, profile.userId),
+        );
+      }
+      const fullProfile = mergeWithCachedProfile(profile, cached);
       setCurrentUser(prev => {
         if (!prev || prev.id !== currentUser.id) return prev;
-        return buildUser(prev.id, prev.email, isProfileComplete(profile), profile);
+        const effectiveEmail = fullProfile.email || prev.email;
+        return buildUser(prev.id, effectiveEmail, isProfileComplete(fullProfile), fullProfile);
       });
     } catch (err: any) {
       console.warn('[AuthContext] refreshCurrentUser error:', err?.message);
@@ -504,6 +681,36 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       subscription.remove();
     };
   }, [refreshCurrentUser]);
+
+  // Poll only while active and only for servers issuing the single-session claim.
+  useEffect(() => {
+    if (!currentUser?.id) return;
+    let checking = false;
+    const check = async () => {
+      if (checking || AppState.currentState !== 'active') return;
+      checking = true;
+      try {
+        const stored = await loadTokens();
+        if (stored?.accessToken && decodeJwtPayload(stored.accessToken)?.mdp_sid) {
+          await get('/auth/session/');
+        }
+      } catch { /* Offline is not evidence of revocation. API handles explicit replacement. */ }
+      finally { checking = false; }
+    };
+    check();
+    const timer = setInterval(check, 30_000);
+    const subscription = AppState.addEventListener('change', state => {
+      if (state === 'active') check();
+    });
+    return () => { clearInterval(timer); subscription.remove(); };
+  }, [currentUser?.id]);
+
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', state => {
+      if (state === 'active') showPendingSessionNotice().catch(() => {});
+    });
+    return () => subscription.remove();
+  }, []);
 
   const value = useMemo(
     () => ({

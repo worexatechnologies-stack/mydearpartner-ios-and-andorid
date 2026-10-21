@@ -2,7 +2,9 @@
     <!-- Android 15+ draws the window background behind the system bars.
          Do not request deprecated statusBarColor/navigationBarColor values. -->
     <style name="SplashTheme" parent="SplashThemeBase">
-        <item name="android:windowLightStatusBar">false</item>
-        <item name="android:windowLightNavigationBar">false</item>
+        <item name="android:windowSplashScreenBackground">#FAF8F7</item>
+        <item name="android:windowSplashScreenAnimatedIcon">@drawable/splash_logo</item>
+        <item name="android:windowLightStatusBar">true</item>
+        <item name="android:windowLightNavigationBar">true</item>
     </style>
 </resources>

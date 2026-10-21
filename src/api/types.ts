@@ -123,6 +123,19 @@ export interface BackendProfile {
   family_status?: string;
   family_location?: string;
 
+  motherTongue?: string;
+  maritalStatus?: string;
+  mobileNumber?: string;
+  subCaste?: string;
+  starNakshatra?: string;
+  manglikStatus?: string;
+  bloodGroup?: string;
+  fatherStatus?: string;
+  motherStatus?: string;
+  familyType?: string;
+  familyStatus?: string;
+  familyLocation?: string;
+
   managed_by?: 'Self' | 'Parent' | 'Sibling' | 'Relative';
   verification_badges?: ('id' | 'education' | 'employment')[];
   lifestyle?: { diet?: string; smoking?: string; drinking?: string; living_arrangement?: string };
@@ -134,9 +147,34 @@ export interface BackendProfile {
 }
 
 export interface ProfileUpdatePayload {
+  date_of_birth?: string | null;
+  profile_created_by?: string;
+  weight?: string;
+  blood_group?: string;
+  complexion?: string;
+  education_detail?: string;
+  employed_in?: string;
+  num_brothers?: number;
+  num_sisters?: number;
+  pref_age_min?: number;
+  pref_age_max?: number;
+  pref_height_min?: string;
+  pref_height_max?: string;
+  pref_religion?: string;
+  pref_caste?: string;
+  pref_location?: string;
+  pref_education?: string;
+  pref_occupation?: string;
+  pref_marital_status?: string;
+  pref_about?: string;
+  email?: string;
+  mobile_number?: string;
+  mobile?: string;
+  phone?: string;
   first_name?: string;
   last_name?: string;
   name?: string;
+  full_name?: string;
   managed_by?: string;
   age?: number;
   gender?: string;
@@ -162,6 +200,22 @@ export interface ProfileUpdatePayload {
   diet?: string;
   horoscope?: string;
   prompts?: { question: string; answer: string }[];
+  caste?: string;
+  sub_caste?: string;
+  gothra?: string;
+  star_nakshatra?: string;
+  manglik_status?: string;
+  father_status?: string;
+  mother_status?: string;
+  family_type?: string;
+  family_status?: string;
+  family_location?: string;
+  lifestyle?: {
+    diet?: string;
+    smoking?: string;
+    drinking?: string;
+    living_arrangement?: string;
+  };
 }
 
 // ─── Interests ───────────────────────────────────────────────────────────────

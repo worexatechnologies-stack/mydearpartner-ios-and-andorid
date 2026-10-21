@@ -7,7 +7,9 @@ import { reportApiReachability } from '../services/ConnectivityService';
 
 import { REQUEST_TIMEOUT_MS } from '../config/constants';
 import { API_BASE_URL } from '../config/env';
-import { StoredCredentials,clearTokens,loadTokens,saveTokens } from '../utils/keychain';
+import { StoredCredentials,clearTokens,clearTokensForSession,loadTokens,saveTokens } from '../utils/keychain';
+import { markMessagingCryptoLoggedOut } from '../services/MessagingCryptoLifecycle';
+import { saveSessionReplacedNotice } from '../services/SessionNoticeService';
 import { ApiError as IApiError } from './types';
 
 class ApiError extends Error implements IApiError {
@@ -34,11 +36,23 @@ class ApiError extends Error implements IApiError {
 }
 
 let refreshPromise: Promise<string | null> | null = null;
-let _onUnauthenticated: (() => void) | null = null;
+let _onUnauthenticated: ((reason?: 'session_replaced') => void) | null = null;
 
-export function registerUnauthenticatedHandler(handler: () => void) {
+export function registerUnauthenticatedHandler(handler: (reason?: 'session_replaced') => void) {
   _onUnauthenticated = handler;
   return () => { if (_onUnauthenticated === handler) _onUnauthenticated = null; };
+}
+
+async function rejectReplacedSession(error: ApiError, stored: StoredCredentials | null): Promise<void> {
+  if (error.status !== 401 || error.code !== 'session_replaced' || !stored) return;
+  if (await clearTokensForSession(stored)) {
+    if (await loadTokens()) throw error;
+    markMessagingCryptoLoggedOut();
+    // No backend logout call: that could revoke the new device's session.
+    try { await saveSessionReplacedNotice(); } catch { /* In-memory handler still signs out. */ }
+    if (!(await loadTokens())) _onUnauthenticated?.('session_replaced');
+  }
+  throw error;
 }
 
 /**
@@ -170,6 +184,8 @@ async function attemptTokenRefresh(): Promise<string | null> {
       body: JSON.stringify({ refresh: stored.refreshToken }),
     });
     if (res.status === 401 || res.status === 403) {
+      const error = await buildApiError(res);
+      await rejectReplacedSession(error, stored);
       const current = await loadTokens();
       if (current?.refreshToken !== stored.refreshToken) {
         throw new ApiError(401, 'Session changed. Please try again.', undefined, true);
@@ -240,6 +256,8 @@ async function request<T>(
     'Content-Type': 'application/json',
     Accept: 'application/json',
     'X-MDP-Client': 'native',
+    'Cache-Control': 'no-cache, no-store, must-revalidate',
+    Pragma: 'no-cache',
     ...(options.headers as Record<string, string>),
   };
   if (stored?.accessToken)
@@ -275,6 +293,11 @@ async function request<T>(
     );
   }
   await assertSessionUnchanged(stored);
+  if (res.status === 401) {
+    const error = await buildApiError({ status: res.status, statusText: res.statusText,
+      json: async () => JSON.parse(responseText) } as Response);
+    await rejectReplacedSession(error, stored);
+  }
   if (res.status === 401 && retryOnAuth) {
     const newToken = await refreshSession();
     if (!newToken)
@@ -400,10 +423,15 @@ export async function upload<T>(
     xhr.timeout = 60000;
 
     xhr.onload = () => {
-      assertSessionUnchanged(stored).then(() => handleLoad(), reject);
+      assertSessionUnchanged(stored).then(() => handleLoad()).catch(reject);
     };
 
-    const handleLoad = () => {
+    const handleLoad = async () => {
+      if (xhr.status === 401) {
+        const error = await buildApiError({ status: xhr.status, statusText: 'Session expired.',
+          json: async () => JSON.parse(xhr.responseText) } as Response);
+        try { await rejectReplacedSession(error, stored); } catch (revoked) { reject(revoked); return; }
+      }
       if (xhr.status === 401 && retryOnAuth) {
         refreshSession().then(newToken => {
           if (!newToken) throw new ApiError(401, 'Session expired. Please log in again.', undefined, true);

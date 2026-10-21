@@ -1,9 +1,11 @@
+jest.mock('../src/services/SessionNoticeService', () => ({ saveSessionReplacedNotice: jest.fn().mockResolvedValue(undefined) }));
 import { get, registerUnauthenticatedHandler } from '../src/api/apiClient';
 import { loadTokens, saveTokens, clearTokens } from '../src/utils/keychain';
 jest.mock('../src/utils/keychain', () => ({
   loadTokens: jest.fn(),
   saveTokens: jest.fn(),
   clearTokens: jest.fn(),
+  clearTokensForSession: jest.fn(),
 }));
 const response = (status: number, body: any) => ({
   status,
@@ -161,4 +163,32 @@ test.each([
   (fetch as jest.Mock).mockResolvedValue(response(403, body));
   await expect(get('/conversations/partner/messages/')).rejects.toMatchObject({ status: 403, code: 'match_removed' });
   expect(clearTokens).not.toHaveBeenCalled();
+});
+
+test('explicit replacement revokes the captured session without refreshing it', async () => {
+  const { clearTokensForSession } = require('../src/utils/keychain');
+  clearTokensForSession.mockResolvedValue(true);
+  (loadTokens as jest.Mock).mockResolvedValueOnce({ accessToken: 'old', refreshToken: 'refresh' })
+    .mockResolvedValueOnce({ accessToken: 'old', refreshToken: 'refresh' })
+    .mockResolvedValue(null);
+  const onLogout = jest.fn();
+  const stop = registerUnauthenticatedHandler(onLogout);
+  (fetch as jest.Mock).mockResolvedValue(response(401, { code: 'session_replaced', detail: 'Signed out.' }));
+  await expect(get('/test')).rejects.toMatchObject({ code: 'session_replaced' });
+  expect(clearTokensForSession).toHaveBeenCalledWith({ accessToken: 'old', refreshToken: 'refresh' });
+  expect(onLogout).toHaveBeenCalledWith('session_replaced');
+  expect(fetch).toHaveBeenCalledTimes(1);
+  stop();
+});
+
+test('replacement cannot clear a session written by a newer login', async () => {
+  const { clearTokensForSession } = require('../src/utils/keychain');
+  clearTokensForSession.mockResolvedValue(false);
+  const onLogout = jest.fn();
+  const stop = registerUnauthenticatedHandler(onLogout);
+  (fetch as jest.Mock).mockResolvedValue(response(401, { code: 'session_replaced' }));
+  await expect(get('/test')).rejects.toMatchObject({ code: 'session_replaced' });
+  expect(onLogout).not.toHaveBeenCalled();
+  expect(saveTokens).not.toHaveBeenCalled();
+  stop();
 });

@@ -18,40 +18,55 @@ navigateToProfile,
 } from '../navigation/navigationRef';
 
 let _deviceToken: string | null = null;
+let _registrationStatus: 'unknown' | 'registered' | 'failed' = 'unknown';
 export const CHANNEL_ID_MESSAGES = 'mdp_messages_v2';
 export const CHANNEL_ID_INTERESTS = 'mdp_interests_v2';
 let _channelsCreated = false;
 
 export async function ensureChannels(): Promise<void> {
-  if (Platform.OS !== 'android' || _channelsCreated) return;
+  if (Platform.OS !== 'android') return;
+  if (_channelsCreated) {
+    try {
+      const [messages, interests] = await Promise.all([
+        notifee.getChannel(CHANNEL_ID_MESSAGES),
+        notifee.getChannel(CHANNEL_ID_INTERESTS),
+      ]);
+      if (messages && interests) return;
+    } catch {
+      // Re-create if missing
+    }
+  }
 
-  await Promise.all([
-    notifee.createChannel({
-      id: CHANNEL_ID_MESSAGES,
-      name: 'Chat Messages',
-      description: 'Incoming chat and direct message notifications',
-      importance: AndroidImportance.HIGH,
-      vibration: true,
-      sound: 'default',
-    }),
-    notifee.createChannel({
-      id: CHANNEL_ID_INTERESTS,
-      name: 'Interests & Matches',
-      description: 'Incoming interests, matches, and profile activity',
-      importance: AndroidImportance.HIGH,
-      vibration: true,
-      sound: 'default',
-    }),
-  ]);
-
-  _channelsCreated = true;
+  try {
+    await Promise.all([
+      notifee.createChannel({
+        id: CHANNEL_ID_MESSAGES,
+        name: 'Chat Messages',
+        description: 'Incoming chat and direct message notifications',
+        importance: AndroidImportance.HIGH,
+        vibration: true,
+        sound: 'default',
+      }),
+      notifee.createChannel({
+        id: CHANNEL_ID_INTERESTS,
+        name: 'Interests & Matches',
+        description: 'Incoming interests, matches, and profile activity',
+        importance: AndroidImportance.HIGH,
+        vibration: true,
+        sound: 'default',
+      }),
+    ]);
+    _channelsCreated = true;
+  } catch (err) {
+    console.warn('[PushNotification] ensureChannels error:', err);
+  }
 }
 
 /**
  * Handle user tapping a notification (from notification bar / Notifee).
  */
 export function handleNotificationPress(data?: any) {
-  if (!data) return;
+  if (!data || data.kind === 'session_replaced' || data.type === 'session_replaced') return;
 
   const conversationId =
     data.conversation_id || data.conversationId || data.chat_id;
@@ -79,6 +94,20 @@ export function handleNotificationPress(data?: any) {
     navigateToChat(conversationId, senderId ?? '', senderName);
   } else if (senderId) {
     navigateToProfile(senderId);
+  }
+}
+
+/**
+ * Handle notification that opened the app from a terminated / killed state (Notifee).
+ */
+export async function handleInitialNotification(): Promise<void> {
+  try {
+    const initialNotification = await notifee.getInitialNotification();
+    if (initialNotification?.notification?.data) {
+      handleNotificationPress(initialNotification.notification.data);
+    }
+  } catch (err) {
+    console.warn('[PushNotification] handleInitialNotification error:', err);
   }
 }
 
@@ -213,9 +242,13 @@ export function subscribeToTokenRefresh(): (() => void) | undefined {
 
 export async function registerWithBackend(token: string): Promise<boolean> {
   _deviceToken = token;
+  _registrationStatus = 'unknown';
   try {
-    return await notificationService.registerDeviceToken(token);
+    const registered = await notificationService.registerDeviceToken(token);
+    if (_deviceToken === token) _registrationStatus = registered ? 'registered' : 'failed';
+    return registered;
   } catch (err) {
+    if (_deviceToken === token) _registrationStatus = 'failed';
     console.warn(
       '[PushNotification] Failed to register token with backend:',
       err,
@@ -227,6 +260,7 @@ export async function registerWithBackend(token: string): Promise<boolean> {
 export async function unregisterOnLogout(): Promise<void> {
   const token = _deviceToken;
   _deviceToken = null;
+  _registrationStatus = 'unknown';
   try {
     if (token) await notificationService.unregisterDeviceToken(token);
   } finally {
@@ -242,9 +276,24 @@ export async function unregisterOnLogout(): Promise<void> {
   }
 }
 
+export function getPushRegistrationStatus() { return _registrationStatus; }
+
 export function getDeviceToken(): string | null {
   return _deviceToken;
 }
+
+/**
+ * Quiet Hours policy (Slide 30):
+ * Respect quiet hours (10:00 PM – 8:00 AM local time).
+ * Automated reminders/nudges are suppressed during quiet hours to avoid fatigue.
+ */
+export function isWithinQuietHours(): boolean {
+  const currentHour = new Date().getHours();
+  return currentHour >= 22 || currentHour < 8;
+}
+
+const recentDisplayMap = new Map<string, number>();
+const DISPLAY_DEDUPE_WINDOW_MS = 3500;
 
 export async function displayNotification(
   title: string,
@@ -264,6 +313,34 @@ export async function displayNotification(
         .filter(([, value]) => value !== undefined && value !== null)
         .map(([key, value]) => [key, String(value)]),
     );
+
+    // Deduplication guard: Prevent identical notification from triggering twice
+    const dedupeKey =
+      (typeof id === 'string' && id.trim().length > 0 ? id.trim() : null) ||
+      `${safeData.kind || 'alert'}:${safeData.message_id || safeData.interest_id || safeData.chat_id || title}:${body}`;
+
+    const now = Date.now();
+    const lastDisplay = recentDisplayMap.get(dedupeKey);
+    if (lastDisplay && now - lastDisplay < DISPLAY_DEDUPE_WINDOW_MS) {
+      return true;
+    }
+    recentDisplayMap.set(dedupeKey, now);
+
+    if (recentDisplayMap.size > 100) {
+      for (const [k, time] of recentDisplayMap.entries()) {
+        if (now - time > 10000) recentDisplayMap.delete(k);
+      }
+    }
+
+    // Slide 30 guard: Suppress non-urgent marketing or scheduled reminders during quiet hours
+    if (
+      isWithinQuietHours() &&
+      (safeData.kind === 'marketing' ||
+        safeData.type === 'reminder' ||
+        safeData.is_promotional === 'true')
+    ) {
+      return false;
+    }
 
     const targetChannel =
       channelId ||

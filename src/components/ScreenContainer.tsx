@@ -1,6 +1,5 @@
-import React from 'react';
-import { StyleSheet,View,ViewStyle,useWindowDimensions } from 'react-native';
-import { Edge,SafeAreaView } from 'react-native-safe-area-context';
+import { LayoutChangeEvent, StyleSheet, View, ViewStyle, useWindowDimensions } from 'react-native';
+import { Edge, SafeAreaView } from 'react-native-safe-area-context';
 import { useTheme } from '../theme/theme';
 
 interface ScreenContainerProps {
@@ -8,6 +7,8 @@ interface ScreenContainerProps {
   style?: ViewStyle;
   edges?: Edge[];
   constrained?: boolean;
+  onLayout?: (event: LayoutChangeEvent) => void;
+  backgroundColor?: string;
 }
 
 export default function ScreenContainer({
@@ -15,14 +16,20 @@ export default function ScreenContainer({
   style,
   edges = ['top', 'bottom', 'left', 'right'],
   constrained = true,
+  onLayout,
+  backgroundColor: customBg,
 }: ScreenContainerProps) {
   const { colors } = useTheme();
   const { width } = useWindowDimensions();
   const isLargeScreen = width >= 600;
-  const backgroundColor = colors.background;
+  const backgroundColor = customBg ?? style?.backgroundColor ?? colors.background;
 
   return (
-    <SafeAreaView style={[styles.safeArea, { backgroundColor }]} edges={edges}>
+    <SafeAreaView
+      style={[styles.safeArea, { backgroundColor }]}
+      edges={edges}
+      onLayout={onLayout}
+    >
       <View
         style={[
           styles.container,

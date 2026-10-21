@@ -49,13 +49,13 @@ export default function WelcomeScreen() {
         <View style={[styles.header, { marginTop: insets.top + spacing.sm }]}>
           <View style={styles.brand}>
             <Image
-              source={require('../../assets/logo.png')}
+              source={require('../../assets/images/logo.png')}
               style={styles.brandLogo}
               resizeMode="contain"
             />
             <View>
               <Text style={styles.brandName}>MyDear<Text style={{ color: colors.primary }}>Partner</Text></Text>
-              <Text style={styles.brandTagline}>REAL PEOPLE. REAL CONNECTIONS.</Text>
+              <Text style={styles.brandTagline}>TRUSTED MATCHMAKING</Text>
             </View>
           </View>
           <Pressable style={styles.langSelector}>

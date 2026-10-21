@@ -6,3 +6,5 @@ urlpatterns = [path('admin/', admin.site.urls), path('api/v1/', include('payment
 
 from safety.views import policy_page, deletion_page
 urlpatterns += [path("api/v1/", include("safety.urls")), path("policies/<str:page>/", policy_page), path("account-deletion/", deletion_page)]
+
+urlpatterns += [path('api/v1/', include('account_sessions.urls'))]

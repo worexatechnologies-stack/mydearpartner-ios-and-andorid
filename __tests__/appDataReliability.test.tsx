@@ -12,7 +12,7 @@ jest.mock('../src/services/MessagingCryptoLifecycle', () => ({ waitForMessagingC
 jest.mock('../src/utils/crypto', () => ({ encryptMessageForChat: jest.fn().mockResolvedValue('encrypted'), smartDecryptText: jest.fn(async text => text) }));
 jest.mock('../src/api/profileService', () => ({ getDiscoverProfiles: jest.fn().mockResolvedValue({ profiles: [] }) }));
 jest.mock('../src/api/apiClient', () => ({ get: jest.fn().mockResolvedValue([]) }));
-jest.mock('../src/api/chatService', () => ({ getChats: jest.fn().mockResolvedValue([]), getMessages: jest.fn(), sendMessage: jest.fn(), getOrCreateChat: jest.fn() }));
+jest.mock('../src/api/chatService', () => ({ getChats: jest.fn().mockResolvedValue([]), getMessages: jest.fn(), getMessagePage: jest.fn(), sendMessage: jest.fn(), getOrCreateChat: jest.fn() }));
 jest.mock('../src/api/interestService', () => ({ getReceivedInterests: jest.fn().mockResolvedValue([]), getSentInterests: jest.fn().mockResolvedValue([]), sendInterest: jest.fn(), respondToInterest: jest.fn() }));
 jest.mock('../src/api/blockService', () => ({ blockService: { getBlockedUsers: jest.fn().mockResolvedValue([]) } }));
 jest.mock('../src/api/wsClient', () => ({ chatWsClient: { sendMessage: jest.fn().mockReturnValue(true), disconnect: jest.fn(), connect: jest.fn() } }));
@@ -22,6 +22,7 @@ let tree: ReactTestRenderer;
 function Capture() { data = useAppData(); return null; }
 beforeEach(async () => {
   jest.useFakeTimers(); jest.clearAllMocks();
+  (ChatService.getMessagePage as jest.Mock).mockImplementation(async (...args) => ({ messages: await (ChatService.getMessages as jest.Mock)(...args.slice(0, 3)), next: null }));
   await act(async () => { tree = create(<AppDataProvider><Capture /></AppDataProvider>); });
 });
 afterEach(async () => { await act(async () => tree.unmount()); jest.useRealTimers(); });
@@ -38,6 +39,11 @@ test('send waits for server persistence instead of trusting a socket buffer writ
   await act(async () => { await expect(data.sendMessage('chat', 'Hello', 'partner')).rejects.toThrow('offline'); });
   expect(chatWsClient.sendMessage).not.toHaveBeenCalled();
   expect(ChatService.sendMessage).toHaveBeenCalledWith('chat', 'encrypted', 'partner');
+  expect(data.getMessagesForChat('chat')).toEqual([expect.objectContaining({ text: 'Hello', deliveryStatus: 'unconfirmed' })]);
+  const row = data.getMessagesForChat('chat')[0];
+  await expect(data.sendMessage('chat', row.text, 'partner', row.id)).rejects.toThrow('Refresh the conversation');
+  expect(ChatService.sendMessage).toHaveBeenCalledTimes(1);
+  await act(async () => { data.dismissLocalMessage('chat', row.id); });
   expect(data.getMessagesForChat('chat')).toEqual([]);
 });
 test('two rapid interest taps issue only one mutation', async () => {
@@ -71,4 +77,66 @@ test('concurrent chat refreshes share initialization and issue one list request'
   await act(async () => { pending = Promise.all([data.refreshChats(), data.refreshChats()]); });
   await act(async () => { ready('me'); await pending; });
   expect(ChatService.getChats).toHaveBeenCalledTimes(1);
+});
+
+
+test('shows sending until the persisted response replaces the local row', async () => {
+  let finish!: (value: unknown) => void;
+  (ChatService.sendMessage as jest.Mock).mockReturnValueOnce(new Promise(resolve => { finish = resolve; }));
+  let pending!: Promise<void>;
+  await act(async () => { pending = data.sendMessage('chat', 'Pending text', 'partner'); });
+  expect(data.getMessagesForChat('chat')[0].deliveryStatus).toBe('sending');
+  await act(async () => { finish({ id: 'saved', senderId: 'me', createdAt: Date.now(), deliveryStatus: 'sent' }); await pending; });
+  expect(data.getMessagesForChat('chat')).toEqual([expect.objectContaining({ id: 'saved', text: 'Pending text', deliveryStatus: 'sent' })]);
+});
+
+test('a definitive rejection can be retried once without duplicate local rows', async () => {
+  (ChatService.sendMessage as jest.Mock).mockRejectedValueOnce({ status: 403, message: 'Denied' });
+  await act(async () => { await expect(data.sendMessage('chat', 'Retry me', 'partner')).rejects.toMatchObject({ status: 403 }); });
+  const failed = data.getMessagesForChat('chat')[0];
+  expect(failed.deliveryStatus).toBe('failed');
+  (ChatService.sendMessage as jest.Mock).mockResolvedValueOnce({ id: 'retry-saved', senderId: 'me', createdAt: Date.now() });
+  await act(async () => { await Promise.all([
+    data.sendMessage('chat', failed.text, 'partner', failed.id),
+    data.sendMessage('chat', failed.text, 'partner', failed.id),
+  ]); });
+  expect(ChatService.sendMessage).toHaveBeenCalledTimes(2);
+  expect(data.getMessagesForChat('chat')).toEqual([expect.objectContaining({ id: 'retry-saved', deliveryStatus: 'sent' })]);
+});
+
+test('encryption selects the other participant rather than the sender', async () => {
+  (ChatService.getChats as jest.Mock).mockResolvedValueOnce([{ id: 'chat', participantIds: ['me', 'member-partner'] }]);
+  await act(async () => { await data.refreshChats(); });
+  (ChatService.sendMessage as jest.Mock).mockResolvedValueOnce({ id: 'saved-other', senderId: 'me', createdAt: Date.now() });
+  await act(async () => { await data.sendMessage('chat', 'Hello partner', 'profile-partner'); });
+  expect(ChatService.sendMessage).toHaveBeenCalledWith('chat', 'encrypted', 'member-partner');
+});
+
+test('older pages merge without duplicates, rewind, cursor reset, or parallel requests', async () => {
+  (ChatService.getMessagePage as jest.Mock).mockResolvedValueOnce({ messages: [message('3'), message('4')], next: 'page-two' });
+  await act(async () => { await data.loadChatMessages('chat', 'partner'); });
+  expect(data.getChatHistoryState('chat').next).toBe('page-two');
+  let finish!: (value: unknown) => void;
+  (ChatService.getMessagePage as jest.Mock).mockReturnValueOnce(new Promise(resolve => { finish = resolve; }));
+  let pending!: Promise<void[]>;
+  await act(async () => { pending = Promise.all([data.loadOlderChatMessages('chat', 'partner'), data.loadOlderChatMessages('chat', 'partner')]); });
+  expect(data.getChatHistoryState('chat').loading).toBe(true);
+  await act(async () => { finish({ messages: [message('1'), message('3')], next: 'page-three' }); await pending; });
+  expect(ChatService.getMessagePage).toHaveBeenCalledTimes(2);
+  expect(data.getMessagesForChat('chat').map(m => m.id)).toEqual(['1', '3', '4']);
+  (ChatService.getMessagePage as jest.Mock).mockResolvedValueOnce({ messages: [message('4'), message('5')], next: 'page-two' });
+  await act(async () => { await data.loadChatMessages('chat', 'partner'); });
+  expect(data.getChatHistoryState('chat').next).toBe('page-three');
+  expect(data.getMessagesForChat('chat').map(m => m.id)).toEqual(['1', '3', '4', '5']);
+});
+test('a failed older page keeps its cursor for retry and a repeated cursor ends the loop', async () => {
+  (ChatService.getMessagePage as jest.Mock).mockResolvedValueOnce({ messages: [message('3')], next: 'older' });
+  await act(async () => { await data.loadChatMessages('chat', 'partner'); });
+  (ChatService.getMessagePage as jest.Mock).mockRejectedValueOnce(new Error('offline'));
+  await act(async () => { await expect(data.loadOlderChatMessages('chat', 'partner')).rejects.toThrow('offline'); });
+  expect(data.getChatHistoryState('chat')).toMatchObject({ next: 'older', loading: false, error: expect.any(String) });
+  (ChatService.getMessagePage as jest.Mock).mockResolvedValueOnce({ messages: [message('1')], next: 'older' });
+  await act(async () => { await data.loadOlderChatMessages('chat', 'partner'); });
+  expect(data.getChatHistoryState('chat')).toMatchObject({ next: null, loading: false, error: undefined });
+  expect(data.getMessagesForChat('chat').map(m => m.id)).toEqual(['1', '3']);
 });

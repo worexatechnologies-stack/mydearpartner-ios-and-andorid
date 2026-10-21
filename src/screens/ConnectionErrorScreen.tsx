@@ -58,7 +58,7 @@ export default function ConnectionErrorScreen({ onRetry, error }: Props) {
       300,
       withSpring(0, { damping: 15 })
     );
-  }, []);
+  }, [contentOpacity, contentTranslateY, floatY, glowScale]);
 
   const floatingIconStyle = useAnimatedStyle(() => ({
     transform: [{ translateY: floatY.value }],

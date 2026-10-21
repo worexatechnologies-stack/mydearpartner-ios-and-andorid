@@ -13,12 +13,14 @@
     "check": "npm run typecheck && npm run lint && npm test -- --runInBand && npm run security:tools",
     "postinstall": "patch-package --error-on-fail",
     "release": "node scripts/bump-version.js",
-    "security:tools": "node scripts/check-security-tools.cjs"
+    "security:tools": "node scripts/check-security-tools.cjs",
+    "ios:device": "react-native run-ios --device --extra-params \"-allowProvisioningUpdates -allowProvisioningDeviceRegistration ENABLE_USER_SCRIPT_SANDBOXING=NO ENABLE_MODULE_VERIFIER=NO\""
   },
   "dependencies": {
     "@notifee/react-native": "^9.1.8",
     "@react-native-async-storage/async-storage": "^3.1.1",
     "@react-native-community/blur": "^4.4.1",
+    "@react-native-firebase/analytics": "26.3.3",
     "@react-native-firebase/app": "^26.3.3",
     "@react-native-firebase/crashlytics": "^26.3.3",
     "@react-native-firebase/messaging": "^26.3.3",
@@ -67,6 +69,7 @@
     "@react-native/typescript-config": "0.87.0",
     "@types/crypto-js": "^4.2.2",
     "@types/jest": "^29.5.13",
+    "@types/node": "26.2.0",
     "@types/react": "^19.2.0",
     "@types/react-test-renderer": "^19.1.0",
     "babel-plugin-transform-remove-console": "^6.9.4",
@@ -75,8 +78,7 @@
     "patch-package": "^8.0.1",
     "prettier": "2.8.8",
     "react-test-renderer": "19.2.3",
-    "typescript": "^6.0.3",
-    "@types/node": "26.2.0"
+    "typescript": "^6.0.3"
   },
   "engines": {
     "node": ">= 22.11.0"

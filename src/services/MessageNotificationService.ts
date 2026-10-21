@@ -15,6 +15,7 @@ recordMessageNotified,
 import { StorageKeys,accountStorageKey } from '../utils/storage';
 import { waitForMessagingCryptoReady } from './MessagingCryptoLifecycle';
 import { displayNotification } from './PushNotificationService';
+import { storeBackgroundMessage } from './BackgroundDataStore';
 
 const PROCESSED_PUSHES_KEY = '@mdp/processed_message_pushes_v1';
 const MAX_PROCESSED_PUSHES = 200;
@@ -30,7 +31,9 @@ type MessageMaterial = {
 };
 
 function stringValue(value: unknown): string | undefined {
-  return typeof value === 'string' && value.length > 0 ? value : undefined;
+  if (value === null || value === undefined) return undefined;
+  if (typeof value === 'number') return String(value);
+  return typeof value === 'string' && value.trim().length > 0 ? value.trim() : undefined;
 }
 
 function dataOf(remoteMessage: any): PushData {
@@ -42,18 +45,34 @@ function extractMaterial(remoteMessage: any): MessageMaterial {
   return {
     id:
       stringValue(data.message_id) ??
+      stringValue(data.messageId) ??
       stringValue(data.id) ??
-      stringValue(remoteMessage?.messageId),
+      stringValue(remoteMessage?.messageId) ??
+      stringValue(remoteMessage?.id),
     ciphertext:
       stringValue(data.encrypted_text) ??
       stringValue(data.message) ??
-      stringValue(data.text),
-    senderId: stringValue(data.sender_id) ?? stringValue(data.senderId),
-    receiverId: stringValue(data.receiver_id) ?? stringValue(data.receiverId),
+      stringValue(data.text) ??
+      stringValue(data.body) ??
+      stringValue(remoteMessage?.notification?.body),
+    senderId:
+      stringValue(data.sender_id) ??
+      stringValue(data.senderId) ??
+      stringValue(data.sender) ??
+      stringValue(data.profile_id) ??
+      stringValue(data.user_id) ??
+      stringValue(data.from_user_id) ??
+      stringValue(data.from_id),
+    receiverId:
+      stringValue(data.receiver_id) ??
+      stringValue(data.receiverId) ??
+      stringValue(data.to_user_id) ??
+      stringValue(data.recipient_id),
     conversationId:
       stringValue(data.conversation_id) ??
       stringValue(data.conversationId) ??
-      stringValue(data.chat_id),
+      stringValue(data.chat_id) ??
+      stringValue(data.chatId),
   };
 }
 
@@ -137,12 +156,16 @@ function fallbackBody(remoteMessage: any): string {
 /** Resolve the title locally so a slow/offline API cannot delay the banner. */
 function resolveMessageTitle(remoteMessage: any): string {
   const data = dataOf(remoteMessage);
-  const name = stringValue(data.sender_name) ?? stringValue(data.senderName);
+  const name =
+    stringValue(data.sender_name) ??
+    stringValue(data.senderName) ??
+    stringValue(data.name) ??
+    stringValue(data.sender);
   return name
     ? name
     : stringValue(data.title) ??
         stringValue(remoteMessage?.notification?.title) ??
-        'MyDearPartner';
+        'New Message';
 }
 
 /**
@@ -179,29 +202,26 @@ export async function handleIncomingMessagePush(
 
   const dedupeId = material.id;
   if (dedupeId) {
-    if (
-      inFlight.has(dedupeId) ||
-      isMessageNotified(dedupeId) ||
-      (await wasProcessed(dedupeId))
-    )
+    if (inFlight.has(dedupeId) || isMessageNotified(dedupeId)) return;
+    inFlight.add(dedupeId);
+
+    if (await wasProcessed(dedupeId)) {
+      inFlight.delete(dedupeId);
       return;
+    }
 
     // Strengthen deduplication using Notifee
     if (!isForeground) {
       try {
         const displayed = await notifee.getDisplayedNotifications();
         if (displayed.some(n => n.id === dedupeId)) {
-          
+          inFlight.delete(dedupeId);
           return;
         }
       } catch {
         // ignore
       }
     }
-
-    // Another callback may have completed the asynchronous checks concurrently.
-    if (inFlight.has(dedupeId) || isMessageNotified(dedupeId)) return;
-    inFlight.add(dedupeId);
   }
 
   try {
@@ -222,10 +242,17 @@ export async function handleIncomingMessagePush(
 
     const userIds = await getUserIds();
     const myMemberId = await waitForMessagingCryptoReady();
-    // Stored IDs alone do not prove that this task belongs to an active session.
-    // A delayed push for another account must not expose its message preview.
-    if (material.receiverId && myMemberId &&
-        material.receiverId !== myMemberId && material.receiverId !== userIds?.profileId) return;
+    const recId = material.receiverId ? String(material.receiverId).trim() : '';
+    if (recId) {
+      const allowedIds = new Set<string>();
+      if (myMemberId) allowedIds.add(String(myMemberId).trim());
+      if (userIds?.memberId) allowedIds.add(String(userIds.memberId).trim());
+      if (userIds?.profileId) allowedIds.add(String(userIds.profileId).trim());
+
+      if (allowedIds.size > 0 && !allowedIds.has(recId)) {
+        return;
+      }
+    }
     const myProfileId = userIds?.profileId;
 
     const senderId = material.senderId;
@@ -282,6 +309,23 @@ export async function handleIncomingMessagePush(
           !plaintext.startsWith('__E2EE__:')
         ) {
           body = getChatContentPreview(plaintext);
+          if (resolved.conversationId && myMemberId) {
+            const rawTimestamp = Number(
+              rawData.timestamp ?? rawData.created_at ?? Date.now(),
+            );
+            storeBackgroundMessage(
+              {
+                id: dedupeId || `bg-${Date.now()}`,
+                chatId: resolved.conversationId,
+                text: plaintext,
+                senderId: resolved.senderId ?? senderId ?? '',
+                createdAt: isNaN(rawTimestamp) ? Date.now() : rawTimestamp,
+              },
+              myMemberId,
+            ).catch(err => {
+              console.warn('[MessageNotification] Failed to cache background msg:', err);
+            });
+          }
         }
       }
     }

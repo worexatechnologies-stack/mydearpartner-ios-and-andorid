@@ -1,3 +1,4 @@
+import { verifySessionRevocation } from './SessionRevocationService';
 import { DeviceEventEmitter } from 'react-native';
 import { getUserIds } from '../utils/keychain';
 import { getActiveChatId,isSelfUserId } from '../utils/notificationTracker';
@@ -11,8 +12,10 @@ import { displayNotification } from './PushNotificationService';
 
 function value(data: any, key: string): string | undefined {
   const candidate = data?.[key];
-  return typeof candidate === 'string' && candidate.length > 0
-    ? candidate
+  if (candidate === null || candidate === undefined) return undefined;
+  if (typeof candidate === 'number') return String(candidate);
+  return typeof candidate === 'string' && candidate.trim().length > 0
+    ? candidate.trim()
     : undefined;
 }
 
@@ -36,18 +39,36 @@ export async function handleIncomingPush(
     value(data, 'notification_type') ??
     ''
   ).toLowerCase();
+  if (kind === 'session_replaced') {
+    const revoked = await verifySessionRevocation(data);
+    if (revoked && !systemRendered && !isForeground) {
+      await displayNotification('Signed out', 'Your account was signed in on another device. You have been logged out.',
+        { kind: 'session_replaced' }, remoteMessage?.messageId);
+    }
+    return;
+  }
   const notifTitle = (remoteMessage?.notification?.title ?? '').toLowerCase();
   const notifBody = (remoteMessage?.notification?.body ?? '').toLowerCase();
 
   const hasChatData =
     kind === 'chat_message' ||
+    kind === 'chat.message' ||
     kind === 'message' ||
+    kind.includes('chat') ||
+    kind.includes('message') ||
     Boolean(data.encrypted_text) ||
     Boolean(data.message_id) ||
+    Boolean(data.messageId) ||
     Boolean(data.conversation_id) ||
-    Boolean(data.chat_id);
+    Boolean(data.conversationId) ||
+    Boolean(data.chat_id) ||
+    Boolean(data.chatId);
 
-  const interestKind = interestEventKind(data, `${notifTitle} ${notifBody}`);
+  // Explicit chat fields take precedence over words in the message preview
+  // (for example, "I like your profile" is still a chat message).
+  const interestKind =
+    interestEventKind(data) ??
+    (hasChatData ? null : interestEventKind(data, `${notifTitle} ${notifBody}`));
   if (interestKind) {
     if (systemRendered) return;
     await notifyInterest(
@@ -76,7 +97,6 @@ export async function handleIncomingPush(
     );
     return;
   }
-  if (systemRendered) return;
 
   // 2. Handle Chat Notifications
   const isChat =
@@ -101,21 +121,20 @@ export async function handleIncomingPush(
     const conversationId =
       value(data, 'conversation_id') ??
       value(data, 'conversationId') ??
-      value(data, 'chat_id');
+      value(data, 'chat_id') ??
+      value(data, 'chatId');
 
     if (
       isForeground &&
       conversationId &&
       String(getActiveChatId()) === String(conversationId)
     ) {
-      
       DeviceEventEmitter.emit('REFRESH_ACTIVE_CHAT', conversationId);
       return;
     }
 
     // Synchronous memory check first (0ms latency, eliminates race condition)
     if (isSelfUserId(senderId)) {
-      
       return;
     }
 
@@ -129,7 +148,6 @@ export async function handleIncomingPush(
           senderId &&
           String(senderId) === String(userIds.profileId))
       ) {
-        
         return;
       }
       const muted = userIds?.memberId
@@ -142,7 +160,6 @@ export async function handleIncomingPush(
           (senderId && muted.includes(senderId)) ||
           (conversationId && muted.includes(conversationId))
         ) {
-          
           return;
         }
       }
@@ -150,9 +167,15 @@ export async function handleIncomingPush(
       // Best effort check
     }
 
+    if (systemRendered) {
+      return;
+    }
+
     await handleIncomingMessagePush(remoteMessage, isForeground);
     return;
   }
+
+  if (systemRendered) return;
 
   // Fallback for any other push notification:
   if (remoteMessage?.notification?.title) {

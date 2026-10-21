@@ -37,7 +37,7 @@ type Props = CompositeScreenProps<
 >;
 
 export default function MyProfileScreen({ navigation }: Props) {
-  const { currentUser, logout } = useAuth();
+  const { currentUser, logout, refreshCurrentUser } = useAuth();
   const {
     receivedInterests,
     sentInterests,
@@ -64,7 +64,8 @@ export default function MyProfileScreen({ navigation }: Props) {
   useFocusEffect(
     useCallback(() => {
       refreshUsage();
-    }, [refreshUsage]),
+      refreshCurrentUser().catch(() => {});
+    }, [refreshUsage, refreshCurrentUser]),
   );
 
   // Animations
@@ -139,7 +140,7 @@ export default function MyProfileScreen({ navigation }: Props) {
   });
 
   return (
-    <View style={styles.container}>
+    <ScreenContainer style={styles.container} edges={['left', 'right']}>
       {/* Parallax Hero Background */}
       <Animated.View
         style={[
@@ -258,26 +259,106 @@ export default function MyProfileScreen({ navigation }: Props) {
           </Text>
           <Text style={styles.profileSub}>
             {profile.age} yrs • {profile.city}
+            {profile.state ? `, ${profile.state}` : ''}
           </Text>
 
-          <AnimatedButton
-            style={styles.editBtn}
-            onPress={() => handleToolPress('EditProfile')}
-          >
-            <LinearGradient
-              colors={['rgba(255,255,255,0.8)', 'rgba(255,255,255,0.4)']}
-              style={StyleSheet.absoluteFill}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-            />
-            <Icon
-              name="pencil"
-              size={14}
-              color={colors.primary}
-              style={{ marginRight: 6 }}
-            />
-            <Text style={styles.editBtnText}>Edit Profile</Text>
-          </AnimatedButton>
+          {/* Quick attribute tags */}
+          <View style={styles.heroTagsRow}>
+            {profile.height ? (
+              <View style={styles.heroTagPill}>
+                <Icon
+                  name="resize-outline"
+                  size={12}
+                  color={colors.primary}
+                  style={{ marginRight: 4 }}
+                />
+                <Text style={styles.heroTagText}>{profile.height}</Text>
+              </View>
+            ) : null}
+            {profile.religion ? (
+              <View style={styles.heroTagPill}>
+                <Icon
+                  name="flower-outline"
+                  size={12}
+                  color={colors.primary}
+                  style={{ marginRight: 4 }}
+                />
+                <Text style={styles.heroTagText}>
+                  {profile.religion}
+                  {profile.caste ? ` • ${profile.caste}` : ''}
+                </Text>
+              </View>
+            ) : null}
+            {profile.profession ? (
+              <View style={styles.heroTagPill}>
+                <Icon
+                  name="briefcase-outline"
+                  size={12}
+                  color={colors.primary}
+                  style={{ marginRight: 4 }}
+                />
+                <Text style={styles.heroTagText}>{profile.profession}</Text>
+              </View>
+            ) : null}
+            {profile.managedBy ? (
+              <View style={styles.heroTagPill}>
+                <Icon
+                  name="people-outline"
+                  size={12}
+                  color={colors.primary}
+                  style={{ marginRight: 4 }}
+                />
+                <Text style={styles.heroTagText}>
+                  Managed by {profile.managedBy}
+                </Text>
+              </View>
+            ) : null}
+          </View>
+
+          {/* Action buttons side-by-side */}
+          <View style={styles.heroActionsRow}>
+            <AnimatedButton
+              style={styles.heroPreviewBtn}
+              onPress={() =>
+                navigation.navigate('ProfileDetail', { profileId: profile.id })
+              }
+              accessibilityLabel="Preview Public Profile"
+            >
+              <LinearGradient
+                colors={[colors.action, colors.actionDark]}
+                style={StyleSheet.absoluteFill}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 0 }}
+              />
+              <Icon
+                name="eye-outline"
+                size={15}
+                color="#FFF"
+                style={{ marginRight: 6 }}
+              />
+              <Text style={styles.heroPreviewBtnText}>Preview Profile</Text>
+            </AnimatedButton>
+
+            <AnimatedButton
+              style={styles.heroEditBtn}
+              onPress={() => handleToolPress('EditProfile')}
+              accessibilityLabel="Edit Profile"
+            >
+              <LinearGradient
+                colors={['rgba(165,55,96,0.12)', 'rgba(165,55,96,0.06)']}
+                style={StyleSheet.absoluteFill}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+              />
+              <Icon
+                name="pencil"
+                size={14}
+                color={colors.primary}
+                style={{ marginRight: 6 }}
+              />
+              <Text style={styles.heroEditBtnText}>Edit Profile</Text>
+            </AnimatedButton>
+          </View>
         </View>
 
         {/* Dashboard Content Grid */}
@@ -685,7 +766,7 @@ export default function MyProfileScreen({ navigation }: Props) {
           </View>
         </View>
       </Animated.ScrollView>
-    </View>
+    </ScreenContainer>
   );
 }
 
@@ -1175,4 +1256,70 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: colors.primary,
   },
+
+  // Hero section tags and actions
+  heroTagsRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'center',
+    gap: 8,
+    marginBottom: 16,
+    paddingHorizontal: 8,
+  },
+  heroTagPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(165,55,96,0.08)',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: 'rgba(165,55,96,0.15)',
+  },
+  heroTagText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#8A274E',
+  },
+  heroActionsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 12,
+    width: '100%',
+  },
+  heroPreviewBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 14,
+    overflow: 'hidden',
+    ...shadow.sm,
+  },
+  heroPreviewBtnText: {
+    color: '#FFF',
+    fontWeight: '700',
+    fontSize: 14,
+  },
+  heroEditBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 14,
+    backgroundColor: colors.surfaceTint,
+    borderWidth: 1,
+    borderColor: colors.roseBorder,
+  },
+  heroEditBtnText: {
+    color: colors.primary,
+    fontWeight: '700',
+    fontSize: 14,
+  },
+
 });

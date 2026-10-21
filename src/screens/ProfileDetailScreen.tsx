@@ -1,6 +1,7 @@
+import { profilePhotoLayout } from '../utils/profilePhotoLayout';
 import BufferingIndicator from '../components/BufferingIndicator';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   Alert,
   Modal,
@@ -18,23 +19,33 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Icon from 'react-native-vector-icons/Ionicons';
 import { getProfileById as fetchProfileById } from '../api/profileService';
 import AuthImage from '../components/AuthImage';
+import AnimatedButton from '../components/AnimatedButton';
+import CompatibilityBreakdownModal from '../components/CompatibilityBreakdownModal';
+import GeminiHoroscopeModal from '../components/GeminiHoroscopeModal';
 import SafetyCenter from '../components/SafetyCenter';
 import ScreenContainer from '../components/ScreenContainer';
 import { useAppData } from '../context/AppDataContext';
+import { useAuth } from '../context/AuthContext';
 import { RootStackParamList } from '../navigation/types';
-import { colors, radii, shadow } from '../theme/theme';
+import { calculateGeminiHoroscopeMatch } from '../services/geminiHoroscopeService';
+import { colors, radii, shadow, spacing } from '../theme/theme';
 import { Profile } from '../types/models';
 import { computeCompatibilityScore } from '../utils/compatibility';
 import { triggerHaptic } from '../utils/haptics';
 import { isInterestQuotaError } from '../utils/interestErrors';
 import { usePlanAllowance } from '../utils/planAllowance';
+import { sharedMatchReasons } from '../utils/matchReasons';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'ProfileDetail'>;
 
 export default function ProfileDetailScreen({ route, navigation }: Props) {
   const [reportOpen, setReportOpen] = useState(false);
   const insets = useSafeAreaInsets();
-  const { width, height } = useWindowDimensions();
+  const { width, height, fontScale } = useWindowDimensions();
+  const [layoutWidth, setLayoutWidth] = useState(
+    Math.min(640, width - insets.left - insets.right),
+  );
+  const compactLayout = layoutWidth < 360 || fontScale > 1.2;
   const { profileId } = route.params;
   const {
     getProfileById,
@@ -56,26 +67,30 @@ export default function ProfileDetailScreen({ route, navigation }: Props) {
   );
 
   useEffect(() => {
+    let isMounted = true;
     if (cachedProfile) {
       setProfile(cachedProfile);
       setIsLoadingProfile(false);
-      return;
+    } else {
+      setProfile(null);
+      setIsLoadingProfile(true);
     }
 
-    let isMounted = true;
-    setIsLoadingProfile(true);
-    fetchProfileById(profileId)
-      .then(res => {
-        if (isMounted) {
-          setProfile(res);
-          setIsLoadingProfile(false);
-        }
-      })
-      .catch(() => {
-        if (isMounted) {
-          setIsLoadingProfile(false);
-        }
-      });
+    const fetchPromise = fetchProfileById(profileId);
+    if (fetchPromise && typeof fetchPromise.then === 'function') {
+      fetchPromise
+        .then(res => {
+          if (isMounted && res?.id && res.name?.trim()) {
+            setProfile(res);
+          }
+          if (isMounted) setIsLoadingProfile(false);
+        })
+        .catch(() => {
+          if (isMounted) {
+            setIsLoadingProfile(false);
+          }
+        });
+    }
 
     return () => {
       isMounted = false;
@@ -87,17 +102,43 @@ export default function ProfileDetailScreen({ route, navigation }: Props) {
   const iBlocked = isBlockedByMe(profileId);
 
   const [activeIndex, setActiveIndex] = useState(0);
+  const [photoSizes, setPhotoSizes] = useState<Record<string, { width: number; height: number }>>({});
+  useEffect(() => setActiveIndex(0), [profileId]);
   const [showMenu, setShowMenu] = useState(false);
   const [isSending, setIsSending] = useState(false);
+  const headerScrollRef = useRef<any>(null);
+  useEffect(() => {
+    headerScrollRef.current?.scrollTo({
+      x: activeIndex * Math.max(1, layoutWidth - 32),
+      animated: false,
+    });
+  }, [layoutWidth, activeIndex]);
+  const [compatModalOpen, setCompatModalOpen] = useState(false);
 
   const allowance = usePlanAllowance();
   const { recordView } = allowance;
+  const { currentUser } = useAuth();
+  const myProfile = currentUser?.profile;
+  const isSelf = Boolean(
+    myProfile &&
+    (myProfile.id === profileId ||
+      profile?.id === myProfile.id ||
+      (profile?.userId && profile.userId === currentUser?.id)),
+  );
+
+  const [horoscopeModalOpen, setHoroscopeModalOpen] = useState(false);
+  const horoscopeAnalysis = React.useMemo(() => {
+    return calculateGeminiHoroscopeMatch(myProfile, profile);
+  }, [myProfile, profile]);
+
+  const matchReasons = React.useMemo(() => sharedMatchReasons(myProfile, profile), [profile, myProfile]);
 
   const isPhotoLocked = Boolean(
+    !isSelf &&
     profile &&
-      (profile.photoPrivacy === 'accepted_only' ||
-        profile.photoPrivacy === 'blurred') &&
-      existingInterest?.status !== 'accepted',
+    (profile.photoPrivacy === 'accepted_only' ||
+      profile.photoPrivacy === 'blurred') &&
+    existingInterest?.status !== 'accepted',
   );
 
   const handleShareBioData = async () => {
@@ -336,20 +377,54 @@ export default function ProfileDetailScreen({ route, navigation }: Props) {
       ? profile.photos
       : [profile.photo].filter(Boolean);
 
-  const cardWidth = width - 32;
-  const HEADER_IMAGE_HEIGHT = Math.min(460, height * 0.46);
+  const activePhoto = allPhotos[activeIndex] || allPhotos[0];
+  const sourceSize = activePhoto ? photoSizes[activePhoto] : undefined;
+  const { width: cardWidth, height: HEADER_IMAGE_HEIGHT } = profilePhotoLayout(
+    layoutWidth, height, sourceSize?.width, sourceSize?.height,
+  );
 
   const locationText = [profile.city, profile.state]
     .filter(s => s && s.trim().length > 0)
     .join(', ');
 
   return (
-    <View style={styles.container}>
+    <ScreenContainer
+      style={styles.container}
+      onLayout={event => setLayoutWidth(event.nativeEvent.layout.width)}
+    >
+      {/* Header participates in layout so scaled text cannot overlap content. */}
+      <View style={styles.floatingHeader}>
+        <TouchableOpacity
+          style={styles.glassBtn}
+          onPress={() => navigation.goBack()}
+        >
+          <Icon name="chevron-back" size={22} color="#302330" />
+        </TouchableOpacity>
+        <Text style={styles.navTitle} numberOfLines={2}>
+          {isSelf ? 'My Profile Preview' : 'Meet your match'}
+        </Text>
+        <View style={{ flexDirection: 'row', gap: 8 }}>
+          <TouchableOpacity
+            style={styles.glassBtn}
+            onPress={handleShareBioData}
+            accessibilityLabel="Share profile via WhatsApp"
+          >
+            <Icon name="share-social-outline" size={20} color="#302330" />
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.glassBtn}
+            onPress={() => setShowMenu(true)}
+          >
+            <Icon name="ellipsis-horizontal" size={22} color="#302330" />
+          </TouchableOpacity>
+        </View>
+      </View>
+
       {/* Scrollable Content */}
       <ScrollView
         showsVerticalScrollIndicator={false}
-        style={{ flex: 1, marginTop: insets.top + 64 }}
-        contentContainerStyle={{ paddingBottom: 24 }} // Space for floating action bar
+        style={styles.profileScroll}
+        contentContainerStyle={{ paddingBottom: 24 }}
         bounces={false}
       >
         {/* Full-screen Carousel Header */}
@@ -361,8 +436,11 @@ export default function ProfileDetailScreen({ route, navigation }: Props) {
         >
           {allPhotos.length > 0 && (
             <ScrollView
+              ref={headerScrollRef}
               horizontal
               pagingEnabled
+              style={{ height: HEADER_IMAGE_HEIGHT }}
+              contentContainerStyle={{ height: HEADER_IMAGE_HEIGHT }}
               showsHorizontalScrollIndicator={false}
               onMomentumScrollEnd={e => {
                 setActiveIndex(
@@ -375,26 +453,23 @@ export default function ProfileDetailScreen({ route, navigation }: Props) {
                   key={idx}
                   style={{
                     width: cardWidth,
-                    height: '100%',
-                    backgroundColor: colors.surface,
+                    height: HEADER_IMAGE_HEIGHT,
+                    backgroundColor: colors.surfaceTint,
                   }}
                 >
                   <AuthImage
                     source={{ uri: p }}
-                    style={{ width: '100%', height: '100%' }}
+                    style={{ width: cardWidth, height: HEADER_IMAGE_HEIGHT }}
+                    onLoad={event => {
+                      const size = event.nativeEvent.source;
+                      if (!Number.isFinite(size?.width) || !Number.isFinite(size?.height) || size.width <= 0 || size.height <= 0) return;
+                      setPhotoSizes(prev => prev[p]?.width === size.width && prev[p]?.height === size.height
+                        ? prev : { ...prev, [p]: { width: size.width, height: size.height } });
+                    }}
                     showLoading
                     fallbackLabel="Photo unavailable"
-                    resizeMode="cover"
+                    resizeMode="contain"
                     blurRadius={isPhotoLocked ? 24 : 0}
-                  />
-                  <LinearGradient
-                    colors={[
-                      'rgba(0,0,0,0.05)',
-                      'transparent',
-                      'rgba(0,0,0,0.7)',
-                    ]}
-                    locations={[0, 0.35, 1]}
-                    style={StyleSheet.absoluteFill}
                   />
                   {isPhotoLocked && (
                     <View style={styles.photoLockOverlay}>
@@ -412,123 +487,200 @@ export default function ProfileDetailScreen({ route, navigation }: Props) {
             </ScrollView>
           )}
 
-          {/* Image Content Overlay (Name & Details at bottom of image) */}
-          <View style={styles.imageOverlayContent}>
-            <View style={styles.imageOverlayRow}>
-              <Text style={styles.overlayName} numberOfLines={2}>
-                {profile.name}, {profile.age}
-              </Text>
+        </View>
 
-              <View style={{ flexDirection: 'row', gap: 6, marginLeft: 12 }}>
-                {profile.verificationBadges?.includes('id') && (
-                  <View
-                    style={[
-                      styles.verifiedBadgeLarge,
-                      {
-                        backgroundColor: '#10B981',
-                        borderColor: 'rgba(255,255,255,0.3)',
-                      },
-                    ]}
-                    accessible
-                    accessibilityLabel="ID Verified"
-                  >
-                    <Icon name="shield-checkmark" size={16} color="#FFF" />
-                  </View>
-                )}
-                {profile.verificationBadges?.includes('education') && (
-                  <View
-                    style={[
-                      styles.verifiedBadgeLarge,
-                      {
-                        backgroundColor: '#3B82F6',
-                        borderColor: 'rgba(255,255,255,0.3)',
-                      },
-                    ]}
-                    accessible
-                    accessibilityLabel="Education Verified"
-                  >
-                    <Icon name="school" size={16} color="#FFF" />
-                  </View>
-                )}
-                {profile.isVerified && !profile.verificationBadges?.length && (
-                  <View style={styles.verifiedBadgeLarge}>
-                    <Icon name="checkmark" size={16} color="#FFF" />
-                  </View>
-                )}
-              </View>
+        {/* Keep identity readable without covering the photo. */}
+        <View style={styles.imageOverlayContent}>
+          <View style={styles.imageOverlayRow}>
+            <Text style={styles.overlayName} numberOfLines={2}>
+              {profile.name}, {profile.age}
+            </Text>
+
+            <View style={{ flexDirection: 'row', gap: 6, marginLeft: 12 }}>
+              {profile.verificationBadges?.includes('id') && (
+                <View
+                  style={[
+                    styles.verifiedBadgeLarge,
+                    {
+                      backgroundColor: '#10B981',
+                      borderColor: 'rgba(255,255,255,0.3)',
+                    },
+                  ]}
+                  accessible
+                  accessibilityLabel="ID Verified"
+                >
+                  <Icon name="shield-checkmark" size={16} color="#FFF" />
+                </View>
+              )}
+              {profile.verificationBadges?.includes('education') && (
+                <View
+                  style={[
+                    styles.verifiedBadgeLarge,
+                    {
+                      backgroundColor: '#3B82F6',
+                      borderColor: 'rgba(255,255,255,0.3)',
+                    },
+                  ]}
+                  accessible
+                  accessibilityLabel="Education Verified"
+                >
+                  <Icon name="school" size={16} color="#FFF" />
+                </View>
+              )}
+              {profile.isVerified && !profile.verificationBadges?.length && (
+                <View style={styles.verifiedBadgeLarge}>
+                  <Icon name="checkmark" size={16} color="#FFF" />
+                </View>
+              )}
             </View>
-            {profile.managedBy && profile.managedBy !== 'Self' ? (
+          </View>
+          {profile.managedBy && profile.managedBy !== 'Self' ? (
+            <View
+              style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                marginBottom: 12,
+              }}
+            >
               <View
                 style={{
+                  backgroundColor: 'rgba(165, 55, 96, 0.85)',
+                  paddingHorizontal: 12,
+                  paddingVertical: 6,
+                  borderRadius: 20,
                   flexDirection: 'row',
                   alignItems: 'center',
-                  marginBottom: 12,
                 }}
               >
-                <View
-                  style={{
-                    backgroundColor: 'rgba(165, 55, 96, 0.85)',
-                    paddingHorizontal: 12,
-                    paddingVertical: 6,
-                    borderRadius: 20,
-                    flexDirection: 'row',
-                    alignItems: 'center',
-                  }}
+                <Icon
+                  name="people"
+                  size={14}
+                  color="#FFF"
+                  style={{ marginRight: 6 }}
+                />
+                <Text
+                  style={{ color: '#FFF', fontSize: 12, fontWeight: '700' }}
                 >
-                  <Icon
-                    name="people"
-                    size={14}
-                    color="#FFF"
-                    style={{ marginRight: 6 }}
-                  />
-                  <Text
-                    style={{ color: '#FFF', fontSize: 12, fontWeight: '700' }}
-                  >
-                    Managed by {profile.managedBy}
-                  </Text>
-                </View>
+                  Managed by {profile.managedBy}
+                </Text>
               </View>
-            ) : null}
-            {locationText ? (
-              <Text style={styles.overlayLocation}>
-                <Icon name="location" size={16} color="#FFF" /> {locationText}
-              </Text>
-            ) : null}
+            </View>
+          ) : null}
+          {locationText ? (
+            <Text style={styles.overlayLocation}>
+              <Icon name="location" size={16} color={colors.primary} /> {locationText}
+            </Text>
+          ) : null}
 
-            {/* Photo Indicators */}
-            {allPhotos.length > 1 && (
-              <View style={styles.photoPills}>
-                {allPhotos.map((_, i) => (
-                  <View
-                    key={i}
-                    style={[
-                      styles.photoDot,
-                      activeIndex === i && styles.photoDotActive,
-                    ]}
-                  />
-                ))}
-              </View>
-            )}
-          </View>
+          {/* Photo Indicators */}
+          {allPhotos.length > 1 && (
+            <View style={styles.photoPills}>
+              {allPhotos.map((_, i) => (
+                <View
+                  key={i}
+                  style={[
+                    styles.photoDot,
+                    activeIndex === i && styles.photoDotActive,
+                  ]}
+                />
+              ))}
+            </View>
+          )}
         </View>
 
         {/* Details Bottom Sheet Area */}
         <View style={styles.bottomSheetContainer}>
+          {allPhotos.length > 1 && (
+            <View style={styles.galleryStripContainer}>
+              <View style={styles.galleryStripHeader}>
+                <View style={styles.galleryStripTitleRow}>
+                  <Icon name="images-outline" size={16} color="#FF5C97" style={{ marginRight: 6 }} />
+                  <Text style={styles.galleryStripTitle}>Photo Gallery</Text>
+                  <View style={styles.galleryCountBadge}>
+                    <Text style={styles.galleryCountText}>{activeIndex + 1}/{allPhotos.length}</Text>
+                  </View>
+                </View>
+                <Text style={styles.galleryStripHint}>Tap photo to preview</Text>
+              </View>
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.galleryStripScroll}
+              >
+                {allPhotos.map((p, idx) => (
+                  <TouchableOpacity
+                    key={idx}
+                    onPress={() => {
+                      triggerHaptic('light');
+                      headerScrollRef.current?.scrollTo({ x: idx * cardWidth, animated: true });
+                      setActiveIndex(idx);
+                    }}
+                    style={[
+                      styles.galleryThumbWrapper,
+                      activeIndex === idx && styles.galleryThumbActive,
+                    ]}
+                    activeOpacity={0.8}
+                    accessibilityRole="button"
+                    accessibilityLabel={`View photo ${idx + 1}`}
+                  >
+                    <AuthImage
+                      source={{ uri: p }}
+                      style={styles.galleryThumb}
+                      resizeMode="cover"
+                      blurRadius={isPhotoLocked ? 10 : 0}
+                    />
+                    {activeIndex === idx && (
+                      <View style={styles.galleryActiveIndicator}>
+                        <Icon name="checkmark" size={11} color="#FFF" />
+                      </View>
+                    )}
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+            </View>
+          )}
+
           {/* Compatibility Banner */}
-          <View style={styles.matchBanner}>
-            <Icon name="flame" size={18} color="#FF2D78" />
-            <Text style={styles.matchBannerText}>
-              {compatScore === null
-                ? 'Get to know this member'
-                : `Match score • ${compatScore}%`}
-            </Text>
-          </View>
+          <TouchableOpacity
+            style={[styles.matchBanner, compactLayout && styles.stackedBanner]}
+            onPress={() => {
+              triggerHaptic('light');
+              setCompatModalOpen(true);
+            }}
+            activeOpacity={0.85}
+            accessibilityRole="button"
+            accessibilityLabel="View compatibility breakdown"
+          >
+            <View style={styles.matchBannerLeft}>
+              <View style={styles.matchBannerIconWrap}>
+                <Icon name="flame" size={18} color="#FF2D78" />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.matchBannerText}>
+                  {isSelf
+                    ? 'Your Profile Overview'
+                    : compatScore === null
+                      ? 'Explore Match Alignment'
+                      : `Match Score • ${compatScore}%`}
+                </Text>
+                <Text style={styles.matchBannerSub}>
+                  {isSelf
+                    ? 'Review how potential matches see your matrimonial profile'
+                    : 'View the reported score and profile facts'}
+                </Text>
+              </View>
+            </View>
+            <View style={styles.matchBannerAction}>
+              <Text style={styles.matchBannerActionText}>Details</Text>
+              <Icon name="chevron-forward" size={14} color="#B23E69" />
+            </View>
+          </TouchableOpacity>
 
           {/* Daily Quota Indicator */}
-          <View style={styles.detailQuotaRow}>
+          <View style={[styles.detailQuotaRow, compactLayout && styles.wrappedQuota]}>
             <View style={styles.detailQuotaPill}>
               <Icon name="heart" size={14} color="#A53760" />
-              <Text style={styles.detailQuotaText} numberOfLines={1}>
+              <Text style={styles.detailQuotaText} >
                 {allowance.isInterestsUnlimited
                   ? 'Unlimited'
                   : `${allowance.interestsRemaining} / ${allowance.interestsLimit}`}
@@ -537,7 +689,7 @@ export default function ProfileDetailScreen({ route, navigation }: Props) {
             <View style={styles.detailQuotaDivider} />
             <View style={styles.detailQuotaPill}>
               <Icon name="eye" size={14} color="#6366F1" />
-              <Text style={styles.detailQuotaText} numberOfLines={1}>
+              <Text style={styles.detailQuotaText} >
                 {allowance.isViewsUnlimited
                   ? 'Unlimited'
                   : `${allowance.viewsRemaining} / ${allowance.viewsLimit}`}
@@ -566,6 +718,27 @@ export default function ProfileDetailScreen({ route, navigation }: Props) {
               />
             </TouchableOpacity>
           </View>
+
+          {/* Why You Matched - Slide 6 & 10 Transparency */}
+          {matchReasons.length > 0 && (
+            <View style={styles.whyMatchedCard}>
+              <View style={styles.whyMatchedHeader}>
+                <Icon name="ribbon" size={15} color="#D97706" />
+                <Text style={styles.whyMatchedTitle}>Why you matched</Text>
+              </View>
+              <Text style={styles.whyMatchedSubtitle}>
+                Recommendation based on information you both choose to provide:
+              </Text>
+              <View style={styles.whyMatchedTags}>
+                {matchReasons.map((reason, idx) => (
+                  <View key={idx} style={styles.whyMatchedPill}>
+                    <Icon name="checkmark-circle" size={13} color="#059669" />
+                    <Text style={styles.whyMatchedPillText}>{reason}</Text>
+                  </View>
+                ))}
+              </View>
+            </View>
+          )}
 
           {/* Quick Tags */}
           <View style={styles.tagsContainer}>
@@ -666,8 +839,8 @@ export default function ProfileDetailScreen({ route, navigation }: Props) {
             </View>
           )}
 
-          {/* Family Details (Only if connected/accepted) */}
-          {existingInterest?.status === 'accepted' && (
+          {/* Family Details (Always visible for self, or if connected/accepted) */}
+          {(isSelf || existingInterest?.status === 'accepted') && (
             <View style={styles.infoCard}>
               <View style={styles.cardHeaderRow}>
                 <Icon name="home" size={20} color={colors.primary} />
@@ -677,22 +850,22 @@ export default function ProfileDetailScreen({ route, navigation }: Props) {
                 <DetailItem
                   icon="man"
                   label="Father"
-                  value={profile.fatherStatus}
+                  value={profile.fatherStatus || (isSelf ? 'Not provided' : undefined)}
                 />
                 <DetailItem
                   icon="woman"
                   label="Mother"
-                  value={profile.motherStatus}
+                  value={profile.motherStatus || (isSelf ? 'Not provided' : undefined)}
                 />
                 <DetailItem
                   icon="people"
                   label="Family Type"
-                  value={profile.familyType}
+                  value={profile.familyType || (isSelf ? 'Not provided' : undefined)}
                 />
                 <DetailItem
                   icon="location"
                   label="Location"
-                  value={profile.familyLocation}
+                  value={profile.familyLocation || (isSelf ? 'Not provided' : undefined)}
                 />
               </View>
             </View>
@@ -703,11 +876,19 @@ export default function ProfileDetailScreen({ route, navigation }: Props) {
             <View style={styles.cardHeaderRow}>
               <Icon name="planet-outline" size={20} color="#D97706" />
               <Text style={styles.cardHeaderTitle}>Horoscope & Kundali</Text>
-              <View style={styles.astroMatchPill}>
+              <TouchableOpacity
+                style={styles.astroMatchPill}
+                onPress={() => {
+                  triggerHaptic('light');
+                  setHoroscopeModalOpen(true);
+                }}
+                activeOpacity={0.8}
+              >
+                <Icon name="planet" size={12} color="#D97706" style={{ marginRight: 4 }} />
                 <Text style={styles.astroMatchPillText}>
-                  {compatScore ? `${Math.round(compatScore * 0.36)}/36 Gunas` : 'High Match'}
+                  View insights
                 </Text>
-              </View>
+              </TouchableOpacity>
             </View>
             <View style={styles.detailsGrid}>
               <DetailItem
@@ -718,7 +899,7 @@ export default function ProfileDetailScreen({ route, navigation }: Props) {
               <DetailItem
                 icon="flame"
                 label="Manglik Status"
-                value={profile.manglikStatus || 'Non-Manglik'}
+                value={profile.manglikStatus || 'Not provided'}
               />
               <DetailItem
                 icon="compass"
@@ -731,6 +912,34 @@ export default function ProfileDetailScreen({ route, navigation }: Props) {
                 value={profile.horoscope || 'Available on mutual connect'}
               />
             </View>
+
+            {/* Gemini Horoscope Match CTA */}
+            <TouchableOpacity
+              style={styles.geminiAstroCta}
+              onPress={() => {
+                triggerHaptic('light');
+                setHoroscopeModalOpen(true);
+              }}
+              activeOpacity={0.88}
+            >
+              <LinearGradient
+                colors={['#FFFBEB', '#FEF3C7']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 0 }}
+                style={styles.geminiAstroCtaGradient}
+              >
+                <View style={styles.geminiAstroIconCircle}>
+                  <Icon name="planet" size={18} color="#D97706" />
+                </View>
+                <View style={{ flex: 1, marginLeft: 10 }}>
+                  <Text style={styles.geminiAstroCtaTitle}>Profile Match Insights</Text>
+                  <Text style={styles.geminiAstroCtaSub}>
+                    Conversation ideas • Optional AI suggestions
+                  </Text>
+                </View>
+                <Icon name="chevron-forward" size={18} color="#D97706" />
+              </LinearGradient>
+            </TouchableOpacity>
           </View>
 
           {/* WhatsApp Bio-Data Share Card */}
@@ -758,138 +967,150 @@ export default function ProfileDetailScreen({ route, navigation }: Props) {
             </LinearGradient>
           </TouchableOpacity>
 
-          {/* Hinge-style Prompts */}
-          {profile.prompts && profile.prompts.length > 0 && (
-            <View style={styles.promptsSection}>
-              <Text style={styles.promptsSectionTitle}>
-                More about {profile.name.split(' ')[0]}
-              </Text>
-              {profile.prompts.map((prompt, index) => (
-                <View key={index} style={styles.promptCard}>
-                  <Text style={styles.promptQuestion}>{prompt.question}</Text>
-                  <Text style={styles.promptAnswer}>{prompt.answer}</Text>
-                </View>
-              ))}
+          {/* Contact Details (Visible for Self Preview or Accepted Match) */}
+          {(isSelf || existingInterest?.status === 'accepted') && (
+            <View style={[styles.infoCard, { marginBottom: 36 }]}>
+              <View style={styles.cardHeaderRow}>
+                <Icon name="call" size={20} color={colors.primary} />
+                <Text style={styles.cardHeaderTitle}>Contact & Account Details</Text>
+              </View>
+              <View style={styles.detailsGrid}>
+                <DetailItem
+                  icon="mail-outline"
+                  label="Email / Gmail"
+                  value={
+                    (isSelf ? (currentUser?.email || profile.email) : profile.email) ||
+                    (isSelf ? 'Not provided' : 'Available on connect')
+                  }
+                />
+                <DetailItem
+                  icon="call-outline"
+                  label="Mobile Number"
+                  value={
+                    (isSelf
+                      ? (profile.mobileNumber || (currentUser as any)?.mobileNumber)
+                      : profile.mobileNumber) ||
+                    (isSelf ? 'Not verified' : 'Available on connect')
+                  }
+                />
+              </View>
             </View>
           )}
         </View>
       </ScrollView>
 
-      {/* Floating Header (Absolute) */}
-      <View style={[styles.floatingHeader, { paddingTop: insets.top + 8 }]}>
-        <TouchableOpacity
-          style={styles.glassBtn}
-          onPress={() => navigation.goBack()}
-        >
-          <Icon name="chevron-back" size={22} color="#302330" />
-        </TouchableOpacity>
-        <Text style={styles.navTitle}>Meet your match</Text>
-        <View style={{ flexDirection: 'row', gap: 8 }}>
-          <TouchableOpacity
-            style={styles.glassBtn}
-            onPress={handleShareBioData}
-            accessibilityLabel="Share profile via WhatsApp"
-          >
-            <Icon name="share-social-outline" size={20} color="#302330" />
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={styles.glassBtn}
-            onPress={() => setShowMenu(true)}
-          >
-            <Icon name="ellipsis-horizontal" size={22} color="#302330" />
-          </TouchableOpacity>
-        </View>
-      </View>
-
       {/* Floating Action Bar (Compact Pill Design - No text obscuration) */}
       <View
         style={[
           styles.floatingPillBar,
-          { paddingBottom: Math.max(insets.bottom, 12) },
+          { paddingBottom: 12 },
         ]}
       >
-        <TouchableOpacity
+        <AnimatedButton
           style={styles.pillActionBtn}
+          activeScale={0.9}
           onPress={() => navigation.goBack()}
-          activeOpacity={0.8}
         >
           <Icon name="close" size={22} color="#6B7280" />
-        </TouchableOpacity>
+        </AnimatedButton>
 
-        <TouchableOpacity
-          style={[
-            styles.pillPrimaryBtn,
-            rel.status === 'sent' && styles.pillPrimaryUnsend,
-          ]}
-          onPress={onToggleInterest}
-          disabled={isSending}
-          activeOpacity={0.8}
-        >
-          {rel.status !== 'sent' && (
+        {isSelf ? (
+          <AnimatedButton
+            style={styles.pillPrimaryBtn}
+            activeScale={0.94}
+            onPress={() => navigation.navigate('EditProfile')}
+          >
             <LinearGradient
-              colors={
-                rel.isMutual
-                  ? ['#059669', '#10B981']
-                  : rel.status === 'received'
-                  ? ['#10B981', '#059669']
-                  : [colors.action, colors.actionDark]
-              }
+              colors={[colors.action, colors.actionDark]}
               style={StyleSheet.absoluteFill}
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 0 }}
             />
-          )}
-          <Icon
-            name={
-              rel.isMutual
-                ? 'chatbubble-ellipses'
-                : rel.status === 'received'
-                ? 'checkmark-circle'
-                : rel.status === 'sent'
-                ? 'heart-dislike'
-                : 'heart'
-            }
-            size={18}
-            color={rel.status === 'sent' ? '#A53760' : '#FFF'}
-            style={{ marginRight: 6 }}
-          />
-          <Text
+            <Icon
+              name="pencil"
+              size={18}
+              color="#FFF"
+              style={{ marginRight: 6 }}
+            />
+            <Text style={styles.pillPrimaryText}>Edit My Profile</Text>
+          </AnimatedButton>
+        ) : (
+          <AnimatedButton
             style={[
-              styles.pillPrimaryText,
-              rel.status === 'sent' && styles.pillPrimaryUnsendText,
+              styles.pillPrimaryBtn,
+              rel.status === 'sent' && styles.pillPrimaryUnsend,
             ]}
+            activeScale={0.94}
+            onPress={onToggleInterest}
+            disabled={isSending}
           >
-            {isSending
-              ? rel.status === 'sent'
-                ? 'Unsending…'
-                : rel.status === 'received'
-                ? 'Accepting…'
-                : 'Sending…'
-              : rel.isMutual
-              ? 'Message Partner'
-              : rel.status === 'received'
-              ? 'Respond to Request'
-              : rel.status === 'sent'
-              ? 'Pending Request'
-              : 'Connect'}
-          </Text>
-        </TouchableOpacity>
+            {rel.status !== 'sent' && (
+              <LinearGradient
+                colors={
+                  rel.isMutual
+                    ? ['#059669', '#10B981']
+                    : rel.status === 'received'
+                      ? ['#10B981', '#059669']
+                      : [colors.action, colors.actionDark]
+                }
+                style={StyleSheet.absoluteFill}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 0 }}
+              />
+            )}
+            <Icon
+              name={
+                rel.isMutual
+                  ? 'chatbubble-ellipses'
+                  : rel.status === 'received'
+                    ? 'checkmark-circle'
+                    : rel.status === 'sent'
+                      ? 'heart-dislike'
+                      : 'heart'
+              }
+              size={18}
+              color={rel.status === 'sent' ? '#A53760' : '#FFF'}
+              style={{ marginRight: 6 }}
+            />
+            <Text
+              style={[
+                styles.pillPrimaryText,
+                rel.status === 'sent' && styles.pillPrimaryUnsendText,
+              ]}
+            >
+              {isSending
+                ? rel.status === 'sent'
+                  ? 'Unsending…'
+                  : rel.status === 'received'
+                    ? 'Accepting…'
+                    : 'Sending…'
+                : rel.isMutual
+                  ? 'Message Partner'
+                  : rel.status === 'received'
+                    ? 'Respond to Request'
+                    : rel.status === 'sent'
+                      ? 'Pending Request'
+                      : 'Connect'}
+            </Text>
+          </AnimatedButton>
+        )}
 
-        {rel.isMutual ? (
-          <TouchableOpacity
+        {!isSelf && rel.isMutual ? (
+          <AnimatedButton
             style={styles.pillActionBtn}
+            activeScale={0.9}
             onPress={onMessage}
-            activeOpacity={0.8}
           >
             <Icon
               name="chatbubble-ellipses-outline"
               size={22}
               color={colors.primary}
             />
-          </TouchableOpacity>
-        ) : rel.status === 'received' && rel.received ? (
-          <TouchableOpacity
+          </AnimatedButton>
+        ) : !isSelf && rel.status === 'received' && rel.received ? (
+          <AnimatedButton
             style={styles.pillActionBtn}
+            activeScale={0.9}
             onPress={async () => {
               try {
                 await cancelInterest(rel.received!.id);
@@ -904,13 +1125,10 @@ export default function ProfileDetailScreen({ route, navigation }: Props) {
                 );
               }
             }}
-            activeOpacity={0.8}
           >
             <Icon name="close-circle-outline" size={22} color="#9CA3AF" />
-          </TouchableOpacity>
-        ) : (
-          <View style={{ width: 48 }} />
-        )}
+          </AnimatedButton>
+        ) : null}
       </View>
 
       <SafetyCenter
@@ -937,33 +1155,62 @@ export default function ProfileDetailScreen({ route, navigation }: Props) {
               >
                 <Text style={styles.menuItemText}>Share Bio-Data (WhatsApp / Link)</Text>
               </TouchableOpacity>
-              <TouchableOpacity
-                style={styles.menuItem}
-                onPress={() => {
-                  setShowMenu(false);
-                  setReportOpen(true);
-                }}
-              >
-                <Text style={styles.menuItemText}>Report profile or photo</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={styles.menuItem}
-                onPress={handleBlockToggle}
-              >
-                <Text
-                  style={[
-                    styles.menuItemText,
-                    { color: iBlocked ? '#10B981' : '#EF4444' },
-                  ]}
+              {isSelf ? (
+                <TouchableOpacity
+                  style={styles.menuItem}
+                  onPress={() => {
+                    setShowMenu(false);
+                    navigation.navigate('EditProfile');
+                  }}
                 >
-                  {iBlocked ? 'Unblock Member' : 'Block Member'}
-                </Text>
-              </TouchableOpacity>
+                  <Text style={styles.menuItemText}>Edit My Profile</Text>
+                </TouchableOpacity>
+              ) : (
+                <>
+                  <TouchableOpacity
+                    style={styles.menuItem}
+                    onPress={() => {
+                      setShowMenu(false);
+                      setReportOpen(true);
+                    }}
+                  >
+                    <Text style={styles.menuItemText}>Report profile or photo</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.menuItem}
+                    onPress={handleBlockToggle}
+                  >
+                    <Text
+                      style={[
+                        styles.menuItemText,
+                        { color: iBlocked ? '#10B981' : '#EF4444' },
+                      ]}
+                    >
+                      {iBlocked ? 'Unblock Member' : 'Block Member'}
+                    </Text>
+                  </TouchableOpacity>
+                </>
+              )}
             </View>
           </View>
         </TouchableWithoutFeedback>
       </Modal>
-    </View>
+
+      <GeminiHoroscopeModal
+        visible={horoscopeModalOpen}
+        onClose={() => setHoroscopeModalOpen(false)}
+        analysis={horoscopeAnalysis}
+        myProfile={myProfile}
+        theirProfile={profile}
+      />
+
+      <CompatibilityBreakdownModal
+        visible={compatModalOpen}
+        onClose={() => setCompatModalOpen(false)}
+        myProfile={myProfile}
+        theirProfile={profile}
+      />
+    </ScreenContainer>
   );
 }
 
@@ -995,6 +1242,59 @@ function DetailItem({
 const styles = StyleSheet.create({
   centered: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   container: { flex: 1, backgroundColor: colors.background },
+  profileScroll: { flex: 1 },
+  stackedBanner: { flexDirection: 'column', alignItems: 'stretch', gap: 10 },
+  wrappedQuota: { flexWrap: 'wrap', gap: 12, borderRadius: 20 },
+
+  whyMatchedCard: {
+    backgroundColor: '#FFFBEB',
+    borderRadius: radii.lg,
+    padding: 14,
+    marginBottom: spacing.md,
+    borderWidth: 1,
+    borderColor: '#FDE68A',
+  },
+  whyMatchedHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 4,
+  },
+  whyMatchedTitle: {
+    flexShrink: 1,
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#92400E',
+  },
+  whyMatchedSubtitle: {
+    fontSize: 12,
+    color: '#78350F',
+    marginBottom: 10,
+    lineHeight: 16,
+  },
+  whyMatchedTags: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+  },
+  whyMatchedPill: {
+    maxWidth: '100%',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 100,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderWidth: 1,
+    borderColor: '#FCD34D',
+  },
+  whyMatchedPillText: {
+    flexShrink: 1,
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#1F2937',
+  },
 
   photoFrame: {
     marginHorizontal: 16,
@@ -1003,6 +1303,10 @@ const styles = StyleSheet.create({
     backgroundColor: '#F2E6EC',
   },
   navTitle: {
+    flex: 1,
+    minWidth: 0,
+    textAlign: 'center',
+    marginHorizontal: 8,
     fontSize: 16,
     fontWeight: '700',
     color: '#302330',
@@ -1010,18 +1314,16 @@ const styles = StyleSheet.create({
   },
   // Floating Header
   floatingHeader: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
     flexDirection: 'row',
+    alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 20,
-    zIndex: 10,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
   },
   glassBtn: {
-    width: 42,
-    height: 42,
+    width: 44,
+    height: 44,
+    flexShrink: 0,
     borderRadius: 14,
     backgroundColor: '#FFFFFF',
     borderWidth: 1,
@@ -1048,14 +1350,13 @@ const styles = StyleSheet.create({
 
   // Image Overlay Content
   imageOverlayContent: {
-    position: 'absolute',
-    bottom: 20,
-    left: 20,
-    right: 20,
-    zIndex: 5,
+    marginHorizontal: 16,
+    paddingTop: 14,
   },
   imageOverlayRow: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
+    rowGap: 8,
     alignItems: 'center',
     marginBottom: 6,
   },
@@ -1063,11 +1364,8 @@ const styles = StyleSheet.create({
     flexShrink: 1,
     fontSize: 26,
     fontWeight: '900',
-    color: '#FFF',
+    color: colors.text,
     letterSpacing: -0.5,
-    textShadowColor: 'rgba(0,0,0,0.5)',
-    textShadowOffset: { width: 0, height: 2 },
-    textShadowRadius: 8,
   },
   verifiedBadgeLarge: {
     marginLeft: 10,
@@ -1082,12 +1380,9 @@ const styles = StyleSheet.create({
   },
   overlayLocation: {
     fontSize: 16,
-    color: '#E2E8F0',
+    color: colors.textSecondary,
     fontWeight: '600',
-    marginBottom: 16,
-    textShadowColor: 'rgba(0,0,0,0.5)',
-    textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 4,
+    marginBottom: 8,
   },
   photoPills: {
     flexDirection: 'row',
@@ -1098,10 +1393,10 @@ const styles = StyleSheet.create({
     width: 6,
     height: 6,
     borderRadius: 3,
-    backgroundColor: 'rgba(255,255,255,0.4)',
+    backgroundColor: colors.roseBorder,
   },
   photoDotActive: {
-    backgroundColor: '#FFF',
+    backgroundColor: colors.primary,
     width: 18,
   },
 
@@ -1116,16 +1411,120 @@ const styles = StyleSheet.create({
   matchBanner: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-between',
     backgroundColor: '#FFEAF2',
     padding: 14,
     borderRadius: 16,
     marginBottom: 14,
   },
+  matchBannerLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexGrow: 1,
+    flexShrink: 1,
+    minWidth: 0,
+    marginRight: 8,
+  },
+  matchBannerIconWrap: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#FFE0EB',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 10,
+  },
   matchBannerText: {
     color: '#B23E69',
     fontWeight: '700',
     fontSize: 14,
-    marginLeft: 10,
+  },
+  matchBannerSub: {
+    fontSize: 11,
+    color: '#8A4860',
+    marginTop: 2,
+    fontWeight: '500',
+  },
+  matchBannerAction: {
+    alignSelf: 'flex-start',
+    flexShrink: 0,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(178, 62, 105, 0.12)',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 12,
+  },
+  matchBannerActionText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#B23E69',
+    marginRight: 2,
+  },
+  galleryStripContainer: {
+    marginBottom: 16,
+  },
+  galleryStripHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  galleryStripTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  galleryStripTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: colors.text,
+  },
+  galleryCountBadge: {
+    marginLeft: 6,
+    backgroundColor: '#FFEAF2',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 8,
+  },
+  galleryCountText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#B23E69',
+  },
+  galleryStripHint: {
+    fontSize: 12,
+    color: colors.textSecondary,
+  },
+  galleryStripScroll: {
+    gap: 10,
+  },
+  galleryThumbWrapper: {
+    width: 64,
+    height: 64,
+    borderRadius: 12,
+    overflow: 'hidden',
+    borderWidth: 2,
+    borderColor: 'transparent',
+    backgroundColor: colors.surface,
+    position: 'relative',
+  },
+  galleryThumbActive: {
+    borderColor: colors.action,
+  },
+  galleryThumb: {
+    width: '100%',
+    height: '100%',
+  },
+  galleryActiveIndicator: {
+    position: 'absolute',
+    top: 4,
+    right: 4,
+    width: 16,
+    height: 16,
+    borderRadius: 8,
+    backgroundColor: colors.action,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 
   // Tags
@@ -1160,10 +1559,13 @@ const styles = StyleSheet.create({
   },
   cardHeaderRow: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
+    rowGap: 10,
     alignItems: 'center',
     marginBottom: 16,
   },
   cardHeaderTitle: {
+    flexShrink: 1,
     fontSize: 18,
     fontWeight: '800',
     color: colors.text,
@@ -1182,7 +1584,10 @@ const styles = StyleSheet.create({
     gap: 20,
   },
   detailItem: {
-    width: '45%',
+    flexBasis: 180,
+    flexGrow: 1,
+    flexShrink: 1,
+    maxWidth: '100%',
     flexDirection: 'row',
     alignItems: 'center',
   },
@@ -1211,40 +1616,7 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
 
-  // Prompts Section
-  promptsSection: {
-    marginTop: 8,
-    marginBottom: 40,
-  },
-  promptsSectionTitle: {
-    fontSize: 20,
-    fontWeight: '900',
-    color: colors.text,
-    marginBottom: 20,
-  },
-  promptCard: {
-    backgroundColor: colors.background,
-    borderRadius: radii.xxl,
-    padding: 24,
-    marginBottom: 16,
-    borderLeftWidth: 6,
-    borderLeftColor: colors.primary,
-    ...shadow.sm,
-  },
-  promptQuestion: {
-    fontSize: 13,
-    fontWeight: '800',
-    color: colors.primary,
-    textTransform: 'uppercase',
-    letterSpacing: 1,
-    marginBottom: 12,
-  },
-  promptAnswer: {
-    fontSize: 20,
-    color: colors.text,
-    fontWeight: '700',
-    lineHeight: 28,
-  },
+
 
   // Floating Action Pill Bar
   floatingPillBar: {
@@ -1258,6 +1630,7 @@ const styles = StyleSheet.create({
     borderColor: colors.roseBorder,
   },
   pillActionBtn: {
+    flexShrink: 0,
     width: 48,
     height: 48,
     borderRadius: 16,
@@ -1267,7 +1640,10 @@ const styles = StyleSheet.create({
   },
   pillPrimaryBtn: {
     flex: 1,
-    height: 48,
+    minWidth: 0,
+    minHeight: 48,
+    paddingHorizontal: 12,
+    paddingVertical: 12,
     borderRadius: 16,
     flexDirection: 'row',
     alignItems: 'center',
@@ -1280,6 +1656,8 @@ const styles = StyleSheet.create({
     borderColor: '#FECDD3',
   },
   pillPrimaryText: {
+    flexShrink: 1,
+    textAlign: 'center',
     color: '#FFF',
     fontSize: 15,
     fontWeight: '800',
@@ -1298,6 +1676,7 @@ const styles = StyleSheet.create({
   menuCard: {
     backgroundColor: '#FFF',
     width: '80%',
+    maxWidth: 480,
     borderRadius: radii.xl,
     overflow: 'hidden',
   },
@@ -1313,6 +1692,8 @@ const styles = StyleSheet.create({
   // Detail Quota Row
   detailQuotaRow: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
     alignItems: 'center',
     justifyContent: 'space-between',
     backgroundColor: '#F8FAFC',
@@ -1324,6 +1705,7 @@ const styles = StyleSheet.create({
     borderColor: '#F1F5F9',
   },
   detailQuotaPill: {
+    maxWidth: '100%',
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
@@ -1335,11 +1717,13 @@ const styles = StyleSheet.create({
     marginHorizontal: 6,
   },
   detailQuotaText: {
+    flexShrink: 1,
     fontSize: 11,
     fontWeight: '600',
     color: '#475569',
   },
   detailQuotaPlanBadge: {
+    maxWidth: '100%',
     flexDirection: 'row',
     alignItems: 'center',
     gap: 2,
@@ -1348,6 +1732,7 @@ const styles = StyleSheet.create({
     borderRadius: radii.pill,
   },
   detailQuotaPlanBadgeText: {
+    flexShrink: 1,
     fontSize: 9,
     fontWeight: '800',
     letterSpacing: 0.5,
@@ -1357,6 +1742,8 @@ const styles = StyleSheet.create({
   astroMatchPill: {
     marginLeft: 'auto',
     backgroundColor: '#FEF3C7',
+    flexDirection: 'row',
+    alignItems: 'center',
     paddingHorizontal: 10,
     paddingVertical: 4,
     borderRadius: radii.pill,
@@ -1365,6 +1752,37 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '800',
     color: '#D97706',
+  },
+  geminiAstroCta: {
+    marginTop: 14,
+    borderRadius: radii.lg,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: '#FDE68A',
+  },
+  geminiAstroCtaGradient: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  geminiAstroIconCircle: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#FFF',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  geminiAstroCtaTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#92400E',
+  },
+  geminiAstroCtaSub: {
+    fontSize: 11,
+    color: '#B45309',
+    marginTop: 2,
   },
 
   // WhatsApp Bio-Data Card

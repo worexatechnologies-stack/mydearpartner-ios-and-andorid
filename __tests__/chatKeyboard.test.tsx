@@ -13,8 +13,10 @@ jest.mock('react-native-safe-area-context', () => ({
 jest.mock('../src/context/AppDataContext', () => {
   const data = {
     getProfileById: () => ({ name: 'Partner', userId: 'other' }),
-    getMessagesForChat: () => [],
+    getMessagesForChat: jest.fn(() => []),
     loadChatMessages: jest.fn().mockResolvedValue(undefined),
+    loadOlderChatMessages: jest.fn().mockResolvedValue(undefined),
+    getChatHistoryState: jest.fn(() => ({ next: null, loading: false })),
     connectToChat: jest.fn(), disconnectFromChat: jest.fn(),
     markChatAsRead: jest.fn(), isBlockedByMe: () => false,
     isUserMuted: () => false,
@@ -80,7 +82,7 @@ describe.each([
         tree = Renderer.create(<ChatScreen navigation={{ setOptions: jest.fn() } as any} route={{ params: { chatId: 'chat', otherProfileId: 'other' } } as any} />);
       });
       const input = () => tree.root.findByType(TextInput);
-      expect(tree.root.findByType(KeyboardAvoidingView).props.behavior).toBe(os === 'ios' ? 'padding' : undefined);
+      expect(tree.root.findByType(KeyboardAvoidingView).props.behavior).toBe(os === 'ios' ? 'padding' : 'height');
       act(() => input().props.onChangeText('Unsent draft'));
       act(() => handlers[Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow']());
       expect(input().props.value).toBe('Unsent draft');
@@ -136,5 +138,77 @@ test('free account without premium locks the chat composer and hides TextInput',
   } finally {
     mockIsPremium = true;
     if (tree) await act(async () => tree.unmount());
+  }
+});
+
+
+test('loading history preserves the reading position instead of forcing the newest message', async () => {
+  jest.useFakeTimers();
+  const data = useAppData();
+  const rows = [{ id: 'latest', chatId: 'chat', senderId: 'other', text: 'Latest', createdAt: 20 }];
+  (data.getMessagesForChat as jest.Mock).mockReturnValue(rows);
+  (data.getChatHistoryState as jest.Mock).mockReturnValue({ next: 'older', loading: false });
+  let tree!: Renderer.ReactTestRenderer;
+  const props: any = { navigation: { setOptions: jest.fn() }, route: { params: { chatId: 'chat', otherProfileId: 'other' } } };
+  let scroll: jest.SpyInstance | undefined;
+  try {
+    await act(async () => { tree = Renderer.create(<ChatScreen {...props} />); });
+    await act(async () => { jest.advanceTimersByTime(100); });
+    const list = tree.root.findByType(Native.FlatList);
+    scroll = jest.spyOn(list.instance, 'scrollToEnd').mockImplementation(() => {});
+    await act(async () => tree.root.findAllByProps({ accessibilityLabel: 'Load more history' })[0].props.onPress());
+    expect(data.loadOlderChatMessages).toHaveBeenCalledWith('chat', 'other');
+    (data.getMessagesForChat as jest.Mock).mockReturnValue([{ ...rows[0], id: 'older', text: 'Older', createdAt: 1 }, ...rows]);
+    await act(async () => { tree.update(<ChatScreen {...props} />); });
+    await act(async () => { jest.advanceTimersByTime(100); tree.root.findByType(Native.FlatList).props.onContentSizeChange(300, 1000); });
+    expect(scroll).not.toHaveBeenCalled();
+    expect(tree.root.findByType(Native.FlatList).props.maintainVisibleContentPosition).toEqual({ minIndexForVisible: 1 });
+  } finally {
+    scroll?.mockRestore();
+    if (tree) await act(async () => tree.unmount());
+    (data.getMessagesForChat as jest.Mock).mockReturnValue([]);
+    (data.getChatHistoryState as jest.Mock).mockReturnValue({ next: null, loading: false });
+    jest.useRealTimers();
+  }
+});
+
+test('an unavailable optional block check does not show a connection error or disable chat', async () => {
+  const check = blockService.checkIfBlockedBy as jest.Mock;
+  check.mockReset().mockResolvedValueOnce(null);
+  let tree!: Renderer.ReactTestRenderer;
+  try {
+    await act(async () => {
+      tree = Renderer.create(<ChatScreen navigation={{ setOptions: jest.fn() } as any} route={{ params: { chatId: 'unknown-chat', otherProfileId: 'other' } } as any} />);
+    });
+    expect(tree.root.findAllByProps({ accessibilityLabel: 'Check connection status' })).toHaveLength(0);
+    expect(tree.root.findAllByType(Native.Text).flatMap(node => [node.props.children].flat()).filter(child => typeof child === 'string').join(' ')).not.toContain('We couldn’t check this connection');
+    expect(tree.root.findAllByType(TextInput)).toHaveLength(1);
+
+  } finally {
+    if (tree) await act(async () => tree.unmount());
+  }
+});
+
+test('an authoritative blocked-by-user send denial disables replies without the optional check', async () => {
+  const send = useAppData().sendMessage as jest.Mock;
+  const check = blockService.checkIfBlockedBy as jest.Mock;
+  check.mockReset();
+  let finishCheck!: (blocked: boolean | null) => void;
+  check.mockImplementationOnce(() => new Promise(resolve => { finishCheck = resolve; }));
+  send.mockRejectedValueOnce({ status: 403, code: 'blocked_by_user', message: 'Messaging is unavailable.' });
+  const alert = jest.spyOn(Native.Alert, 'alert').mockImplementation(() => {});
+  let tree!: Renderer.ReactTestRenderer;
+  try {
+    await act(async () => {
+      tree = Renderer.create(<ChatScreen navigation={{ setOptions: jest.fn() } as any} route={{ params: { chatId: 'blocked-chat', otherProfileId: 'other' } } as any} />);
+    });
+    act(() => tree.root.findByType(TextInput).props.onChangeText('Hello'));
+    await act(async () => tree.root.findAllByProps({ accessibilityLabel: 'Send message' })[0].props.onPress());
+    await act(async () => finishCheck(false));
+    expect(tree.root.findAllByType(TextInput)).toHaveLength(0);
+    expect(tree.root.findAllByType(Native.Text).flatMap(node => [node.props.children].flat()).filter(child => typeof child === 'string').join(' ')).toContain("You can't reply to this conversation.");
+  } finally {
+    if (tree) await act(async () => tree.unmount());
+    alert.mockRestore(); send.mockClear();
   }
 });

@@ -1,3 +1,5 @@
+import { confirmedDelivery } from '../utils/messageDelivery';
+import { Message } from '../types/models';
 /**
  * MyDearPartner — WebSocket Client
  *
@@ -12,13 +14,7 @@ WS_RECONNECT_DELAY_MS,
 import { WS_BASE_URL } from '../config/env';
 import { loadTokens } from '../utils/keychain';
 
-export type WsMessageCallback = (message: {
-  id: string;
-  chatId: string;
-  senderId: string;
-  text: string;
-  createdAt: number;
-}) => void;
+export type WsMessageCallback = (message: Message) => void;
 
 export type WsStatusCallback = (
   status: 'connected' | 'disconnected' | 'error',
@@ -146,10 +142,12 @@ class ChatWebSocket {
               ? data.message
               : data;
           const text = msg.text ?? msg.message;
-          if (typeof text !== 'string') return;
+          const id = msg.id ?? msg.message_id;
+          if (typeof text !== 'string' || !id) return;
 
           this.messageCallback?.({
-            id: msg.id ?? String(Date.now()),
+            deliveryStatus: confirmedDelivery(msg),
+            id: String(id),
             chatId: this.chatId!,
             senderId:
               msg.sender_id ?? msg.senderId ?? msg.sender ?? msg.user_id,

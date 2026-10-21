@@ -12,6 +12,7 @@ Switch,
 Text,
 TouchableOpacity,
 View,
+Share,
 } from 'react-native';
 import LinearGradient from 'react-native-linear-gradient';
 import Icon from 'react-native-vector-icons/Ionicons';
@@ -352,6 +353,22 @@ export default function SettingsScreen({ navigation }: Props) {
                 last
               />
             </Section>
+            <Section title="Invite & Community">
+              <LinkRow
+                icon="gift-outline"
+                color="#EC4899"
+                title="Invite Friends & Family"
+                description="Share MyDearPartner with loved ones seeking meaningful matchmaking"
+                onPress={() => {
+                  Share.share({
+                    title: 'Join MyDearPartner Matrimony',
+                    message:
+                      'Find meaningful, verified life partner connections on MyDearPartner Matrimony: https://mydearpartner.in/download',
+                  }).catch(() => {});
+                }}
+                last
+              />
+            </Section>
             <Section title="Policies">
               {(['privacy', 'terms', 'safety'] as const).map(page => (
                 <LinkRow key={page} icon="document-text-outline" color="#7C3AED"
@@ -380,7 +397,7 @@ export default function SettingsScreen({ navigation }: Props) {
             </Section>
           </>
         )}
-        <Text style={styles.version}>MY DEAR PARTNER · VERSION 0.3.2</Text>
+        <Text style={styles.version}>MY DEAR PARTNER · VERSION 0.3.3</Text>
       </ScrollView>
       <SafetyCenter page={safetyPage} onClose={() => setSafetyPage(null)} />
     </ScreenContainer>

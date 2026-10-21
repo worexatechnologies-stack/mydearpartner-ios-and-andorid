@@ -33,3 +33,8 @@ Payment flow is: authenticated member creates order with `membership_plan_id`;
 the app opens Razorpay using returned `order_id`, `amount` (paise), and public
 `key_id`; client signature verification confirms the hint only; a valid,
 idempotent Razorpay webhook atomically activates/extends membership.
+
+Single-device login integration is in [account_sessions/README.md](account_sessions/README.md).
+It includes a session-aware token issuer, access/refresh enforcement, targeted FCM
+notices and a durable retry outbox. It still requires integration into the full
+production backend, all web/OTP issuers, and WebSocket authorization.

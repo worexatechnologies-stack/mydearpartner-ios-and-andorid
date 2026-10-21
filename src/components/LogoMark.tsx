@@ -1,5 +1,5 @@
 import React from 'react';
-import { Image, StyleProp, StyleSheet, View, ViewStyle } from 'react-native';
+import { Image, StyleProp, View, ViewStyle } from 'react-native';
 
 interface LogoMarkProps {
   size?: number;
@@ -8,7 +8,7 @@ interface LogoMarkProps {
   style?: StyleProp<ViewStyle>;
 }
 
-export const LogoMark = ({ size = 150, style }: LogoMarkProps) => {
+export const LogoMark = React.memo(({ size = 150, style }: LogoMarkProps) => {
   return (
     <View style={[{ width: size, height: size, justifyContent: 'center', alignItems: 'center' }, style]}>
       <Image
@@ -21,5 +21,5 @@ export const LogoMark = ({ size = 150, style }: LogoMarkProps) => {
       />
     </View>
   );
-};
+});
 

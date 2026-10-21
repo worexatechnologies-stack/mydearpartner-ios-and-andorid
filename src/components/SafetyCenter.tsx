@@ -23,6 +23,7 @@ import legal from '../config/legal.json';
 import { tokens } from '../theme/tokens';
 import { platformTheme } from '../theme/platform';
 import LinearGradient from 'react-native-linear-gradient';
+import analyticsService from '../services/analyticsService';
 
 export type SafetyPage = 'privacy' | 'terms' | 'safety' | 'report' | 'delete';
 
@@ -61,6 +62,10 @@ export default function SafetyCenter({
       const result = page === 'delete'
         ? await requestAccountDeletion()
         : await submitReport(target!, reason, details);
+
+      if (page === 'report') {
+        analyticsService.trackReportSubmitted({ restricted_category: reason }).catch(() => {});
+      }
         
       Alert.alert(
         'Request received',

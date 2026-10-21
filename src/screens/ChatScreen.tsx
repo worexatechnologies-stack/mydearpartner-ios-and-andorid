@@ -1,3 +1,4 @@
+import { deliveryLabel } from '../utils/messageDelivery';
 function isRemovedMatch(error: unknown): boolean {
   const value = error as { code?: string; message?: string } | null;
   return value?.code === 'match_removed' || value?.message === 'This match has been removed.';
@@ -5,7 +6,9 @@ function isRemovedMatch(error: unknown): boolean {
 
 import BufferingIndicator from '../components/BufferingIndicator';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
-import React,{ useEffect,useLayoutEffect,useRef,useState } from 'react';
+import React,{ useCallback,useEffect,useLayoutEffect,useRef,useState } from 'react';
+import TypingIndicator from '../components/TypingIndicator';
+import QuickReplyBar from '../components/QuickReplyBar';
 import {
 
 Alert,
@@ -42,6 +45,8 @@ import { Message } from '../types/models';
 import { parseStickerMessage } from '../utils/chatContent';
 import { triggerHaptic } from '../utils/haptics';
 import { usePlanAllowance } from '../utils/planAllowance';
+import analyticsService from '../services/analyticsService';
+import AnimatedButton from '../components/AnimatedButton';
 
 const EMOJI_CATEGORIES = [
   {
@@ -57,7 +62,7 @@ const EMOJI_CATEGORIES = [
       '👍',
       '❤️',
       '🔥',
-      '✨',
+      '💖',
       '🎉',
       '👋',
     ],
@@ -134,7 +139,7 @@ const EMOJI_CATEGORIES = [
     emojis: [
       '🎉',
       '🎊',
-      '✨',
+      '💐',
       '⭐',
       '🌈',
       '☀️',
@@ -180,7 +185,7 @@ function isSameDay(a: number, b: number): boolean {
   return new Date(a).toDateString() === new Date(b).toDateString();
 }
 
-export default function ChatScreen({ route, navigation }: Props) {
+export default function ChatScreen({ route, navigation, embedded = false }: Props & { embedded?: boolean }) {
   const { width, height } = useWindowDimensions();
   const isLarge = width >= 640;
   const { chatId, otherProfileId, fallbackName, fallbackPhoto } = route.params;
@@ -189,7 +194,10 @@ export default function ChatScreen({ route, navigation }: Props) {
     getProfileById,
     getMessagesForChat,
     sendMessage,
+    dismissLocalMessage,
     loadChatMessages,
+    loadOlderChatMessages,
+    getChatHistoryState,
     connectToChat,
     disconnectFromChat,
     markChatAsRead,
@@ -210,7 +218,8 @@ export default function ChatScreen({ route, navigation }: Props) {
   );
   const [reportTarget, setReportTarget] = useState<ReportTarget | null>(null);
   const [showMenu, setShowMenu] = useState(false);
-  const [blockedByThem, setBlockedByThem] = useState(false);
+  const [blockedByThem, setBlockedByThem] = useState<boolean | null>(null);
+  const blockRequestRevision = useRef(0);
   const [matchRemoved, setMatchRemoved] = useState(false);
   const listRef = useRef<FlatList>(null);
   const typingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -236,16 +245,28 @@ export default function ChatScreen({ route, navigation }: Props) {
   const messages = getMessagesForChat(chatId);
   const [loadingMessages, setLoadingMessages] = useState(messages.length === 0);
   const [messageError, setMessageError] = useState<string | null>(null);
-
-  // Auto-scroll to latest message when messages change or load
+  const hasMessagesRef = useRef(messages.length > 0);
+  const nearBottomRef = useRef(true);
+  const lastDisplayedMessageRef = useRef<string | undefined>(undefined);
+  const history = getChatHistoryState(chatId);
+  const latestMessageId = messages[messages.length - 1]?.id;
   useEffect(() => {
-    if (messages.length > 0) {
+    nearBottomRef.current = true;
+    lastDisplayedMessageRef.current = undefined;
+  }, [chatId]);
+
+  // Earlier pages must not pull the reader back to the newest message.
+  useEffect(() => {
+    hasMessagesRef.current = messages.length > 0;
+    const changedLatest = lastDisplayedMessageRef.current !== latestMessageId;
+    lastDisplayedMessageRef.current = latestMessageId;
+    if (messages.length > 0 && changedLatest && nearBottomRef.current) {
       const timer = setTimeout(() => {
-        listRef.current?.scrollToEnd({ animated: false });
+        if (nearBottomRef.current) listRef.current?.scrollToEnd({ animated: false });
       }, 50);
       return () => clearTimeout(timer);
     }
-  }, [messages.length]);
+  }, [chatId, messages.length, latestMessageId]);
 
   // Is this person blocked by ME?
   const iBlocked = isBlockedByMe(otherProfileId);
@@ -266,18 +287,23 @@ export default function ChatScreen({ route, navigation }: Props) {
     markChatAsRead(chatId, otherProfileId);
   }, [chatId, otherProfileId, markChatAsRead]);
 
-  // Check if they have blocked me
-  useEffect(() => {
-    let cancelled = false;
-    blockService.checkIfBlockedBy(otherProfileId).then(result => {
-      if (!cancelled) setBlockedByThem(result);
-    }).catch(() => {
-      // The server still authorizes every send; avoid an unhandled rejection.
-    });
-    return () => {
-      cancelled = true;
-    };
+  // Optional block lookup is not a transport health check. Unknown results
+  // must not imply a failed chat connection or a confirmed unblock.
+  const refreshBlockStatus = useCallback(async () => {
+    const revision = ++blockRequestRevision.current;
+    try {
+      const result = await blockService.checkIfBlockedBy(otherProfileId);
+      if (revision === blockRequestRevision.current) setBlockedByThem(result);
+    } catch {
+      if (revision === blockRequestRevision.current) setBlockedByThem(null);
+    }
   }, [otherProfileId]);
+
+  useEffect(() => {
+    setBlockedByThem(null);
+    refreshBlockStatus();
+    return () => { blockRequestRevision.current += 1; };
+  }, [refreshBlockStatus]);
 
   const myId = currentUser?.id ?? 'me';
   const myMemberId = currentUser?.profile?.id ?? 'me';
@@ -311,7 +337,9 @@ export default function ChatScreen({ route, navigation }: Props) {
       connectToChat(chatId, otherProfileId, setPartnerTyping);
       refresh();
     };
-    setLoadingMessages(true);
+    if (!hasMessagesRef.current) {
+      setLoadingMessages(true);
+    }
     connect();
     const refreshSub = DeviceEventEmitter.addListener('REFRESH_ACTIVE_CHAT', (id?: string) => {
       if (!id || String(id) === String(chatId)) refresh();
@@ -330,11 +358,11 @@ export default function ChatScreen({ route, navigation }: Props) {
       appStateSub.remove();
       disconnectFromChat();
     };
-  }, [chatId, otherProfileId, loadChatMessages, connectToChat, disconnectFromChat, connectionClosed]);
+  }, [chatId, otherProfileId, loadChatMessages, connectToChat, disconnectFromChat, connectionClosed, isPremium]);
 
   useLayoutEffect(() => {
-    navigation.setOptions({ headerShown: false });
-  }, [navigation]);
+    if (!embedded) navigation.setOptions({ headerShown: false });
+  }, [navigation, embedded]);
 
   const stopTyping = () => {
     if (typingTimerRef.current) {
@@ -376,7 +404,7 @@ export default function ChatScreen({ route, navigation }: Props) {
     setComposerPanel(currentPanel => (currentPanel === panel ? null : panel));
   };
 
-  const sendContent = async (content: string, restoreTextOnFailure = false) => {
+  const sendContent = async (content: string, restoreTextOnFailure = false, retryId?: string) => {
     const toSend = content.trim();
     if (!toSend || sending || chatDisabled) return;
 
@@ -400,20 +428,28 @@ export default function ChatScreen({ route, navigation }: Props) {
     if (restoreTextOnFailure) setText('');
     setSending(true);
     setComposerPanel(null);
+    const isFirstMessage = messages.length === 0;
     try {
-      await sendMessage(chatId, toSend, otherProfileId);
+      if (retryId) await sendMessage(chatId, toSend, otherProfileId, retryId);
+      else await sendMessage(chatId, toSend, otherProfileId);
+      if (isFirstMessage) {
+        analyticsService.trackConversationStarted().catch(() => {});
+      }
     } catch (err: any) {
-      if (restoreTextOnFailure) setText(toSend);
+      if (restoreTextOnFailure && !err?.localMessageId) setText(toSend);
       // Plan and permission denials also use 403. Only disable the chat when
       // the block endpoint confirms that the partner actually blocked us.
       if (isRemovedMatch(err)) setMatchRemoved(true);
+      else if (err?.status === 403 && err?.code === 'blocked_by_user') {
+        blockRequestRevision.current += 1;
+        setBlockedByThem(true);
+      }
       else if (err?.status === 403) {
-        const confirmedBlocked = await blockService.checkIfBlockedBy(otherProfileId).catch(() => false);
-        if (confirmedBlocked) setBlockedByThem(true);
+        await refreshBlockStatus();
       }
       Alert.alert(
-        restoreTextOnFailure ? 'Couldn’t send message' : 'Couldn’t send sticker',
-        err?.message || (!isPremium ? 'Your premium plan has ended. Upgrade to continue chatting.' : 'Please check your connection and try again.'),
+        err?.deliveryUnconfirmed ? 'Message status unknown' : 'Couldn’t send message',
+        err?.deliveryUnconfirmed ? 'The server may have saved this message. Refresh the conversation before sending it again.' : err?.message || (!isPremium ? 'Your premium plan has ended. Upgrade to continue chatting.' : 'Please check your connection and try again.'),
       );
     } finally {
       setSending(false);
@@ -506,10 +542,10 @@ export default function ChatScreen({ route, navigation }: Props) {
   return (
     <KeyboardAvoidingView 
       style={[styles.root, { paddingLeft: insets.left, paddingRight: insets.right }]}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}
     >
-      <StatusBar barStyle="light-content" />
+      {!embedded && <StatusBar barStyle="light-content" />}
 
       {/* Dark gradient background */}
       <LinearGradient colors={['#250b1a', '#10050d']} style={StyleSheet.absoluteFill} />
@@ -642,16 +678,52 @@ export default function ChatScreen({ route, navigation }: Props) {
                 })
                 .finally(() => setLoadingMessages(false));
             }}
-            ListHeaderComponent={messageError ? <Text accessibilityRole="alert" style={{ color: '#EF4444', padding: 16 }}>{messageError}</Text> : undefined}
+            ListHeaderComponent={
+              <View>
+                {messageError && <Text accessibilityRole="alert" style={styles.historyError}>{messageError}</Text>}
+                {history.error && <Text accessibilityRole="alert" style={styles.historyError}>{history.error}</Text>}
+                {history.next && <TouchableOpacity
+                  accessibilityRole="button"
+                  accessibilityLabel={history.error ? 'Retry loading more history' : 'Load more history'}
+                  accessibilityState={{ disabled: history.loading || loadingMessages, busy: history.loading }}
+                  disabled={history.loading || loadingMessages || connectionClosed}
+                  style={styles.historyButton}
+                  onPress={() => {
+                    nearBottomRef.current = false;
+                    loadOlderChatMessages(chatId, otherProfileId).catch(error => {
+                      if (isRemovedMatch(error)) setMatchRemoved(true);
+                    });
+                  }}
+                ><Text style={styles.historyButtonText}>{history.loading ? 'Loading history…' : history.error ? 'Retry history' : 'Load more history'}</Text></TouchableOpacity>}
+              </View>
+            }
             ref={listRef}
             data={listItems}
             keyExtractor={item => item.key}
             contentContainerStyle={styles.listContent}
             keyboardShouldPersistTaps="handled"
             keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
-            onContentSizeChange={() => listRef.current?.scrollToEnd({ animated: false })}
-            onLayout={() => listRef.current?.scrollToEnd({ animated: false })}
+            maintainVisibleContentPosition={{ minIndexForVisible: 1 }}
+            onScroll={event => {
+              const { contentOffset, contentSize, layoutMeasurement } = event.nativeEvent;
+              nearBottomRef.current = contentSize.height - contentOffset.y - layoutMeasurement.height < 80;
+            }}
+            scrollEventThrottle={16}
+            onContentSizeChange={() => { if (nearBottomRef.current) listRef.current?.scrollToEnd({ animated: false }); }}
+            onLayout={() => { if (nearBottomRef.current) listRef.current?.scrollToEnd({ animated: false }); }}
             showsVerticalScrollIndicator={false}
+            initialNumToRender={15}
+            maxToRenderPerBatch={10}
+            windowSize={7}
+            removeClippedSubviews={Platform.OS === 'android'}
+            ListFooterComponent={
+              partnerTyping ? (
+                <TypingIndicator
+                  visible={partnerTyping}
+                  typingUserName={otherProfile?.name?.split(' ')[0]}
+                />
+              ) : undefined
+            }
             ListEmptyComponent={
               <View style={styles.emptyWrap}>
                 <View style={styles.emptyIconCircle}>
@@ -707,28 +779,43 @@ export default function ChatScreen({ route, navigation }: Props) {
                         <Text style={isMine ? styles.textMine : styles.textTheirs}>{msgText}</Text>
                       )}
                       {isMine ? (
-                        <View style={styles.timeRow}>
+                        <View style={[styles.timeRow, { flexWrap: 'wrap' }]}>
                           <Text style={[styles.bubbleTime, sticker && styles.stickerTimeMine]}>{formatBubbleTime(msg.createdAt)}</Text>
-                          <Icon name="checkmark-done" size={14} color="#FFF" style={{ marginLeft: 4 }} />
+                          <Text accessibilityLabel={`Message status: ${deliveryLabel(msg)}`} style={[styles.bubbleTime, styles.deliveryText]}>{deliveryLabel(msg)}</Text>
+
                         </View>
                       ) : (
                         <Text style={[styles.bubbleTime, styles.bubbleTimeTheirs, sticker && styles.stickerTimeTheirs]}>{formatBubbleTime(msg.createdAt)}</Text>
+                      )}
+                      {isMine && msg.deliveryStatus === 'unconfirmed' && (
+                        <Text style={styles.messageStatusHelp}>This message may already be saved. Refresh before sending it again.</Text>
+                      )}
+                      {isMine && (msg.deliveryStatus === 'failed' || msg.deliveryStatus === 'unconfirmed') && (
+                        <TouchableOpacity
+                          accessibilityRole="button"
+                          accessibilityLabel={msg.deliveryStatus === 'failed' ? 'Retry message' : 'Refresh message status'}
+                          disabled={sending || (msg.deliveryStatus === 'failed' && chatDisabled)}
+                          style={styles.messageRetry}
+                          onPress={() => {
+                            if (msg.deliveryStatus === 'failed') sendContent(msg.text, false, msg.id);
+                            else loadChatMessages(chatId, otherProfileId).catch(() => Alert.alert('Unable to refresh', 'Try again when your connection is available.'));
+                          }}
+                        ><Text style={styles.messageRetryText}>{msg.deliveryStatus === 'failed' ? 'Retry' : 'Refresh conversation'}</Text></TouchableOpacity>
+                      )}
+                      {isMine && msg.deliveryStatus === 'unconfirmed' && (
+                        <TouchableOpacity accessibilityRole="button" accessibilityLabel="Dismiss local message status" style={styles.messageRetry}
+                          onPress={() => Alert.alert('Dismiss local status?', 'First check whether this message appears in the refreshed conversation. Dismissing this status does not delete a message saved by the server.', [
+                            { text: 'Cancel', style: 'cancel' },
+                            { text: 'Dismiss status', onPress: () => dismissLocalMessage(chatId, msg.id) },
+                          ])}>
+                          <Text style={styles.messageRetryText}>Dismiss local status</Text>
+                        </TouchableOpacity>
                       )}
                     </View>
                   </View>
                 </View>
               );
             }}
-            ListFooterComponent={
-              partnerTyping ? (
-                <View style={[styles.messageRow, styles.rowTheirs, { marginTop: 4, marginBottom: 8 }]}>
-                  <View style={styles.avatarSlot} />
-                  <View style={[styles.bubble, styles.bubbleTheirs, { paddingVertical: 10, paddingHorizontal: 16 }]}>
-                    <Text style={[styles.textTheirs, { fontStyle: 'italic', opacity: 0.6 }]}>typing...</Text>
-                  </View>
-                </View>
-              ) : undefined
-            }
           />
         )}
 
@@ -777,38 +864,14 @@ export default function ChatScreen({ route, navigation }: Props) {
           </View>
         ) : (
           <View style={[styles.inputBar, { paddingBottom: keyboardVisible ? 8 : Math.max(insets.bottom, 8) }]}>
-            {messages.length <= 4 && !text.trim() && (
-              <View style={styles.icebreakersWrapper}>
-                <View style={styles.icebreakerHeader}>
-                  <Icon name="chatbubble-ellipses-outline" size={14} color="#FF5C97" style={{ marginRight: 4 }} />
-                  <Text style={styles.icebreakerTitle}>Suggested Icebreakers</Text>
-                </View>
-                <ScrollView
-                  horizontal
-                  showsHorizontalScrollIndicator={false}
-                  contentContainerStyle={styles.icebreakerScroll}
-                >
-                  {[
-                    '👋 Hi! What are your favorite weekend hobbies?',
-                    "Loved your profile! What's your dream travel spot?",
-                    '☕ Coffee or Chai? How do you start your day?',
-                    '🎬 Any good movie or show recommendations lately?',
-                    '💍 What values matter most to you in a life partner?',
-                  ].map((prompt, idx) => (
-                    <TouchableOpacity
-                      key={idx}
-                      style={styles.icebreakerChip}
-                      onPress={() => {
-                        setText(prompt);
-                        triggerHaptic('light');
-                      }}
-                      activeOpacity={0.75}
-                    >
-                      <Text style={styles.icebreakerChipText}>{prompt}</Text>
-                    </TouchableOpacity>
-                  ))}
-                </ScrollView>
-              </View>
+            {!text.trim() && (
+              <QuickReplyBar
+                onSelectPrompt={prompt => {
+                  setText(prompt);
+                }}
+                partnerName={otherProfile?.name}
+                isNewConversation={messages.length <= 4}
+              />
             )}
             <View style={styles.inputRow}>
               <TouchableOpacity style={styles.emojiBtn} onPress={() => toggleComposerPanel('emoji')}>
@@ -826,11 +889,18 @@ export default function ChatScreen({ route, navigation }: Props) {
                 maxLength={500}
                 keyboardAppearance="dark"
               />
-              <TouchableOpacity accessibilityRole="button" accessibilityLabel="Send message" style={[styles.sendBtn, (!text.trim() || sending) && styles.sendBtnDisabled]} onPress={onSend} disabled={!text.trim() || sending} activeOpacity={0.8}>
+              <AnimatedButton
+                accessibilityRole="button"
+                accessibilityLabel="Send message"
+                activeScale={0.88}
+                style={[styles.sendBtn, (!text.trim() || sending) && styles.sendBtnDisabled]}
+                onPress={onSend}
+                disabled={!text.trim() || sending}
+              >
                 <LinearGradient colors={text.trim() ? ['#FF5C97', '#FF2D78'] : ['#351829', '#351829']} style={styles.sendBtnGradient}>
                   <Icon name="send" size={18} color={text.trim() ? '#FFF' : '#64748B'} />
                 </LinearGradient>
-              </TouchableOpacity>
+              </AnimatedButton>
             </View>
           </View>
         )}
@@ -865,8 +935,15 @@ export default function ChatScreen({ route, navigation }: Props) {
 }
 
 const styles = StyleSheet.create({
+  historyButton: { minHeight: 44, alignItems: 'center', justifyContent: 'center', padding: 12 },
+  historyButtonText: { color: '#FF8BB7', fontWeight: '700' },
+  historyError: { color: '#FCA5A5', padding: 16 },
   root: { flex: 1, backgroundColor: '#10050d' },
   flex: { flex: 1 },
+  deliveryText: { marginLeft: 6, flexShrink: 1 },
+  messageStatusHelp: { color: '#FFF', fontSize: 12, lineHeight: 18, marginTop: 8 },
+  messageRetry: { minHeight: 44, justifyContent: 'center', paddingVertical: 8 },
+  messageRetryText: { color: '#FFF', fontWeight: '700', textDecorationLine: 'underline' },
   largeConstrained: { maxWidth: 680, width: '100%', alignSelf: 'center' },
   ringsContainer: {
     ...(StyleSheet.absoluteFill as any),

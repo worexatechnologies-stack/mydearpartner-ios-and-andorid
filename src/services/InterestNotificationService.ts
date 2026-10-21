@@ -1,8 +1,9 @@
-import { DeviceEventEmitter } from 'react-native';
 import {
 isInterestNotified,
 recordInterestNotified,
 } from '../utils/notificationTracker';
+import { getUserIds } from '../utils/keychain';
+import { storeBackgroundInterest } from './BackgroundDataStore';
 import {
 CHANNEL_ID_INTERESTS,
 displayNotification,
@@ -47,13 +48,13 @@ export interface InterestAlert {
 /** Shared by push and REST fallback; display first, then remember successful delivery. */
 export async function notifyInterest(
   alert: InterestAlert,
-  foreground: boolean,
+  _foreground?: boolean,
 ): Promise<void> {
   // A repeated push must still refresh the list, even if its alert is deduplicated.
-  if (foreground) DeviceEventEmitter.emit('REFRESH_INTERESTS');
-  const key = alert.id ? `${alert.kind}:${alert.id}` : undefined;
-  if (key && (isInterestNotified(key) || inFlight.has(key))) return;
-  if (key) inFlight.add(key);
+  const alertId = alert.id || alert.profileId || (alert.data?.sender_id ? String(alert.data.sender_id) : undefined);
+  const key = alertId ? `${alert.kind}:${alertId}` : `${alert.kind}:${alert.senderName || 'user'}`;
+  if (isInterestNotified(key) || inFlight.has(key)) return;
+  inFlight.add(key);
   const name = alert.senderName || 'Someone';
   const accepted = alert.kind === 'interest_accepted';
   const title = accepted
@@ -76,6 +77,26 @@ export async function notifyInterest(
   };
   let delivered = false;
   try {
+    try {
+      const userIds = await getUserIds();
+      const myMemberId = userIds?.memberId;
+      if (myMemberId && alert.id) {
+        const isAccepted = alert.kind === 'interest_accepted';
+        const isDeclined = alert.kind === 'interest_declined';
+        const isWithdrawn = alert.kind === 'interest_withdrawn';
+        const status = isAccepted ? 'accepted' : isDeclined ? 'declined' : isWithdrawn ? 'withdrawn' : 'pending';
+        storeBackgroundInterest({
+          id: alert.id,
+          fromUserId: alert.profileId || 'partner',
+          toUserId: myMemberId,
+          status,
+          createdAt: Date.now(),
+        }, myMemberId).catch(() => {});
+      }
+    } catch {
+      // Best-effort background store
+    }
+
     delivered = await displayNotification(
       title,
       message,

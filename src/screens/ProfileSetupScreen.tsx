@@ -7,6 +7,7 @@ import ScreenContainer from '../components/ScreenContainer';
 import { useAuth } from '../context/AuthContext';
 import { colors,fontSizes,radii,spacing } from '../theme/theme';
 import { Gender } from '../types/models';
+import analyticsService from '../services/analyticsService';
 
 const genderOptions: { label: string; value: Gender }[] = [
   { label: 'Male', value: 'male' },
@@ -22,7 +23,6 @@ export default function ProfileSetupScreen() {
   const [age, setAge] = useState(profile?.age ? profile.age.toString() : '');
   const [gender, setGender] = useState<Gender>(profile?.gender || 'female');
   const [city, setCity] = useState(profile?.city || '');
-  const [state, setState] = useState(profile?.state || '');
   const [religion, setReligion] = useState(profile?.religion || '');
   const [profession, setProfession] = useState(profile?.profession || '');
   const [education, setEducation] = useState(profile?.education || '');
@@ -85,7 +85,6 @@ export default function ProfileSetupScreen() {
         age: validAge,
         gender,
         city: city.trim(),
-        state: state.trim(),
         religion: religion.trim(),
         profession: profession.trim(),
         education: education.trim(),
@@ -94,6 +93,7 @@ export default function ProfileSetupScreen() {
         photo: photoUri || profile?.photo || '',
         interests: [],
       });
+      analyticsService.trackProfileComplete({ completion_version: 'v1' }).catch(() => {});
     } catch (err: any) {
       console.warn('[ProfileSetupScreen] onSubmit error:', err);
       setError(err?.message || 'Could not save profile. Please try again.');
@@ -192,9 +192,9 @@ export default function ProfileSetupScreen() {
         />
         <AppTextInput
           label="State"
-          placeholder="e.g. Karnataka"
-          value={state}
-          onChangeText={setState}
+          placeholder="State updates are currently unavailable"
+          value={profile?.state || ''}
+          editable={false}
         />
         <AppTextInput
           label="Religion"

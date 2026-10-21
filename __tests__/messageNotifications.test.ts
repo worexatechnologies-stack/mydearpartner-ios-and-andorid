@@ -78,6 +78,24 @@ test('persisted IDs cannot bypass a failed cryptographic readiness gate', async 
   expect(smartDecryptText).not.toHaveBeenCalled();
   expect(displayNotification).toHaveBeenCalledWith('Alex', 'You have a new message', expect.any(Object), 'no-session', 'mdp_messages_v2');
 });
+
+test('background data-only chat displays a notification', async () => {
+  const { handleIncomingPush } = require('../src/services/IncomingPushService');
+  await handleIncomingPush(push('background-data'), false);
+  expect(displayNotification).toHaveBeenCalledWith('Alex', 'Hello', expect.any(Object), 'background-data', 'mdp_messages_v2');
+});
+
+test('background system-rendered chat does not create a duplicate', async () => {
+  const { handleIncomingPush } = require('../src/services/IncomingPushService');
+  await handleIncomingPush({ ...push('background-alert'), notification: { title: 'Alex', body: 'New message' } }, false);
+  expect(displayNotification).not.toHaveBeenCalled();
+});
+
+test('chat previews mentioning likes or matches stay on the message channel', async () => {
+  const { handleIncomingPush } = require('../src/services/IncomingPushService');
+  await handleIncomingPush({ ...push('chat-like'), notification: { title: 'Alex', body: 'I like your profile, we match!' } }, true);
+  expect(displayNotification).toHaveBeenCalledWith('Alex', 'Hello', expect.any(Object), 'chat-like', 'mdp_messages_v2');
+});
 test('push addressed to a different signed-in account is ignored', async () => {
   await handleIncomingMessagePush({ data: { ...push('other-account').data, receiver_id: 'previous-account' } }, true);
   expect(displayNotification).not.toHaveBeenCalled();

@@ -1,12 +1,13 @@
+import ChatScreen from '../ChatScreen';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { FLOATING_TAB_BAR_BOTTOM } from '../../navigation/tabBarLayout';
 import {
   BottomTabScreenProps,
   useBottomTabBarHeight,
 } from '@react-navigation/bottom-tabs';
-import { CompositeScreenProps, useFocusEffect } from '@react-navigation/native';
+import { CompositeScreenProps, useFocusEffect, useIsFocused } from '@react-navigation/native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import {
   Alert,
   FlatList,
@@ -16,6 +17,7 @@ import {
   Text,
   TextInput,
   View,
+  useWindowDimensions,
 } from 'react-native';
 import LinearGradient from 'react-native-linear-gradient';
 import Icon from 'react-native-vector-icons/Ionicons';
@@ -45,7 +47,34 @@ type Props = CompositeScreenProps<
   NativeStackScreenProps<RootStackParamList>
 >;
 
-export default function ChatsListScreen({ navigation }: Props) {
+export default function ChatsListScreen(props: Props) {
+  const { width, fontScale } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
+  const tabBarHeight = useBottomTabBarHeight();
+  const focused = useIsFocused();
+  const [selected, setSelected] = useState<RootStackParamList['Chat'] | null>(null);
+  const wide = width - insets.left - insets.right >= (fontScale > 1.5 ? 1100 : 900);
+  const closeConversation = useCallback(() => setSelected(null), []);
+  const chatNavigation = useMemo(() => ({ ...props.navigation, goBack: closeConversation }), [props.navigation, closeConversation]);
+  return <View style={styles.workspace}>
+    {(wide || !selected) && <View style={wide ? styles.sidebar : styles.workspacePane}>
+      <ConversationList {...props} onOpenChat={wide ? setSelected : undefined} selectedId={selected?.chatId} />
+    </View>}
+    {(wide || selected) && <View style={[styles.workspacePane, { paddingBottom: tabBarHeight + Math.max(insets.bottom, FLOATING_TAB_BAR_BOTTOM) + 8 }]}>
+      {selected && focused ? <ChatScreen
+        key={selected.chatId}
+        embedded
+        route={{ key: `tablet-chat-${selected.chatId}`, name: 'Chat', params: selected }}
+        navigation={chatNavigation as any}
+      /> : <View style={styles.workspaceEmpty}><Text style={styles.workspaceTitle}>Your conversations</Text><Text style={styles.workspaceHint}>Select a conversation to read and reply.</Text></View>}
+    </View>}
+  </View>;
+}
+
+function ConversationList({ navigation, onOpenChat, selectedId }: Props & {
+  onOpenChat?: (params: RootStackParamList['Chat']) => void;
+  selectedId?: string;
+}) {
   const insets = useSafeAreaInsets();
   const tabBarHeight = useBottomTabBarHeight();
   const { currentUser } = useAuth();
@@ -408,6 +437,7 @@ export default function ChatsListScreen({ navigation }: Props) {
               hasUnread={hasUnread}
               isMuted={isMuted}
               preview={preview}
+              selected={selectedId === item.id}
               formatTime={formatTime}
               onPress={() => {
                 if (!isPremium) {
@@ -424,12 +454,10 @@ export default function ChatsListScreen({ navigation }: Props) {
                   );
                   return;
                 }
-                navigation.navigate('Chat', {
-                  chatId: item.id,
-                  otherProfileId: profile.id,
-                  fallbackName: profile.name,
-                  fallbackPhoto: profile.photo,
-                });
+                const params = { chatId: item.id, otherProfileId: profile.id,
+                  fallbackName: profile.name, fallbackPhoto: profile.photo };
+                if (onOpenChat) onOpenChat(params);
+                else navigation.navigate('Chat', params);
               }}
             />
           );
@@ -449,6 +477,7 @@ function ChatRow({
   preview,
   formatTime,
   onPress,
+  selected,
 }: any) {
   const [isOnline, setIsOnline] = useState(profile.isOnline === true);
 
@@ -459,7 +488,7 @@ function ChatRow({
 
   return (
     <AnimatedButton
-      style={styles.row}
+      style={[styles.row, selected && styles.rowSelected]}
       accessibilityLabel={`${profile.name}${
         hasUnread ? `, ${item.unreadCount ?? 0} unread messages` : ''
       }`}
@@ -528,6 +557,13 @@ function ChatRow({
 }
 
 const styles = StyleSheet.create({
+  workspace: { flex: 1, flexDirection: 'row', backgroundColor: colors.background },
+  workspacePane: { flex: 1, minWidth: 0 },
+  sidebar: { width: 320, borderRightWidth: 1, borderRightColor: colors.border },
+  workspaceEmpty: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24, gap: 12 },
+  workspaceTitle: { fontSize: 22, fontWeight: '700', color: colors.text, textAlign: 'center' },
+  workspaceHint: { fontSize: 15, color: colors.textSecondary, textAlign: 'center' },
+  rowSelected: { backgroundColor: colors.surfaceTint, borderColor: colors.primary },
   container: {
     backgroundColor: colors.background,
     flex: 1,

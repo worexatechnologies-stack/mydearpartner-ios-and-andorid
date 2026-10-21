@@ -16,6 +16,7 @@ end
 
 # Disable Firebase SPM to avoid static linkage conflicts
 $RNFirebaseDisableSPM = true
+$RNFirebaseAnalyticsWithoutAdIdSupport = true
 
 target 'MyDearPartner' do
   # Required for Firebase Swift pods to work as static libraries
@@ -43,6 +44,12 @@ target 'MyDearPartner' do
         config.build_settings['CLANG_ALLOW_NON_MODULAR_INCLUDES_IN_FRAMEWORK_MODULES'] = 'YES'
         config.build_settings['GCC_WARN_INHIBIT_ALL_WARNINGS'] = 'NO'
         config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = min_ios_version_supported
+        # CocoaPods copies vendored XCFrameworks outside script sandbox inputs.
+        config.build_settings['ENABLE_USER_SCRIPT_SANDBOXING'] = 'NO'
+        # This legacy coder's private headers cannot pass Xcode's module verifier.
+        if target.name == 'SDWebImageWebPCoder'
+          config.build_settings['ENABLE_MODULE_VERIFIER'] = 'NO'
+        end
       end
       target.build_phases.each do |build_phase|
         if build_phase.is_a?(Xcodeproj::Project::Object::PBXShellScriptBuildPhase)
@@ -51,4 +58,21 @@ target 'MyDearPartner' do
       end
     end
   end
+end
+
+# CocoaPods adds Firebase integration phases after post_install.
+post_integrate do |installer|
+    installer.aggregate_targets.map(&:user_project).uniq.each do |project|
+      project.native_targets.each do |target|
+        target.build_configurations.each do |configuration|
+          configuration.build_settings['ENABLE_USER_SCRIPT_SANDBOXING'] = 'NO'
+        end
+        target.shell_script_build_phases.each do |phase|
+          if phase.name.to_s.include?('[RNFB]')
+            phase.always_out_of_date = '1'
+          end
+        end
+      end
+      project.save
+    end
 end

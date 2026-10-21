@@ -14,9 +14,9 @@ import DiscoverScreen from '../screens/main/DiscoverScreen';
 import InterestsScreen from '../screens/main/InterestsScreen';
 import MyProfileScreen from '../screens/main/MyProfileScreen';
 import SearchScreen from '../screens/main/SearchScreen';
+import { useAppStats } from '../hooks/useAppStats';
 
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useAppData } from '../context/AppDataContext';
 import { FLOATING_TAB_BAR_BOTTOM } from './tabBarLayout';
 import { MainTabParamList } from './types';
 
@@ -48,6 +48,7 @@ function TabIcon({
   unreadCount,
   pendingInterestsCount,
   isSmallScreen,
+  hasProfileAlert,
 }: {
   routeName: keyof MainTabParamList;
   focused: boolean;
@@ -55,6 +56,7 @@ function TabIcon({
   unreadCount: number;
   pendingInterestsCount: number;
   isSmallScreen: boolean;
+  hasProfileAlert?: boolean;
 }) {
   const config = tabConfig[routeName];
   const showBadge = routeName === 'Chats' && unreadCount > 0;
@@ -86,21 +88,22 @@ function TabIcon({
           <Text style={styles.badgeText}>{interestBadgeText}</Text>
         </View>
       )}
+      {routeName === 'MyProfile' && hasProfileAlert && (
+        <View style={styles.profileAlertDot} />
+      )}
     </View>
   );
 }
 
 export default function MainTabNavigator() {
-  const { totalUnreadCount, receivedInterests } = useAppData();
-  const pendingInterestsCount = receivedInterests.filter(
-    i => i.status === 'pending',
-  ).length;
-  const { width } = useWindowDimensions();
+  const stats = useAppStats();
+  const { width, fontScale } = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const isSmallScreen = width < 360;
-  const isTablet = width >= 600;
-
-  const tabBarHeight = 72;
+  const availableWidth = width - insets.left - insets.right;
+  const barWidth = Math.min(560, Math.max(0, availableWidth - 32));
+  const barLeft = insets.left + (availableWidth - barWidth) / 2;
+  const tabBarHeight = 72 + Math.max(0, fontScale - 1) * 14;
 
   return (
     <View style={{ flex: 1 }}>
@@ -122,10 +125,10 @@ export default function MainTabNavigator() {
             {
               height: tabBarHeight,
               bottom: Math.max(insets.bottom, FLOATING_TAB_BAR_BOTTOM),
-              left: isTablet ? (width - 560) / 2 : 16,
-              start: isTablet ? (width - 560) / 2 : 16,
-              end: isTablet ? (width - 560) / 2 : 16,
-              width: isTablet ? 560 : width - 32,
+              left: barLeft,
+              start: barLeft,
+              end: insets.right + (availableWidth - barWidth) / 2,
+              width: barWidth,
               paddingHorizontal: 4,
               paddingBottom: 0,
             },
@@ -140,9 +143,10 @@ export default function MainTabNavigator() {
               routeName={route.name as keyof MainTabParamList}
               focused={focused}
               color={color}
-              unreadCount={totalUnreadCount}
-              pendingInterestsCount={pendingInterestsCount}
+              unreadCount={stats.unreadChats}
+              pendingInterestsCount={stats.pendingInterests}
               isSmallScreen={isSmallScreen}
+              hasProfileAlert={stats.nearingInterestLimit || stats.newMatchesCount > 0}
             />
           ),
         })}
@@ -225,5 +229,16 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 10,
     fontWeight: '900',
+  },
+  profileAlertDot: {
+    position: 'absolute',
+    top: -2,
+    right: -2,
+    width: 9,
+    height: 9,
+    borderRadius: 5,
+    backgroundColor: '#FBBF24',
+    borderWidth: 1.5,
+    borderColor: '#FFF',
   },
 });

@@ -12,12 +12,16 @@
         <item name="android:windowNoTitle">true</item>
         <item name="android:windowFullscreen">false</item>
         <item name="android:windowContentOverlay">@null</item>
+        <item name="android:windowLightStatusBar">true</item>
+        <item name="android:windowLightNavigationBar">true</item>
     </style>
 
     <!-- System bar colors are supported only on Android 14 and earlier. -->
     <style name="SplashTheme" parent="SplashThemeBase">
-        <item name="android:statusBarColor">#E70846</item>
-        <item name="android:navigationBarColor">#E70846</item>
+        <item name="android:statusBarColor">#FAF8F7</item>
+        <item name="android:navigationBarColor">#FAF8F7</item>
+        <item name="android:windowLightStatusBar">true</item>
+        <item name="android:windowLightNavigationBar">true</item>
     </style>
 
 </resources>

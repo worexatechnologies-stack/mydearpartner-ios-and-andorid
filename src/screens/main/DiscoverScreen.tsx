@@ -1,3 +1,4 @@
+import ScreenContainer from '../../components/ScreenContainer';
 import { useAuth } from '../../context/AuthContext';
 import { sameProfileCity } from '../../utils/profileLocation';
 import { useProfilePager } from '../../hooks/useProfilePager';
@@ -8,7 +9,7 @@ import {
 } from '@react-navigation/bottom-tabs';
 import { CompositeScreenProps, useFocusEffect } from '@react-navigation/native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -19,10 +20,22 @@ import {
   ScrollView,
   Image,
   Alert,
+  Platform,
 } from 'react-native';
+import FastImage from 'react-native-fast-image';
 import LinearGradient from 'react-native-linear-gradient';
+import Icon from 'react-native-vector-icons/Ionicons';
+import Animated, {
+  useSharedValue,
+  useAnimatedStyle,
+  withTiming,
+  withSpring,
+  interpolate,
+  Extrapolation,
+  runOnJS,
+} from 'react-native-reanimated';
+import { Gesture, GestureDetector, GestureHandlerRootView } from 'react-native-gesture-handler';
 import {
-  SafeAreaView,
   useSafeAreaInsets,
 } from 'react-native-safe-area-context';
 import {
@@ -32,8 +45,10 @@ import {
   Search,
   ShieldCheck,
   Star,
+  Compass,
   X,
 } from 'lucide-react-native';
+import AnimatedButton from '../../components/AnimatedButton';
 
 import { useAppData } from '../../context/AppDataContext';
 import { MainTabParamList, RootStackParamList } from '../../navigation/types';
@@ -45,6 +60,13 @@ import MatchCelebrationModal from '../../components/MatchCelebrationModal';
 import { triggerHaptic } from '../../utils/haptics';
 import { Profile } from '../../types/models';
 import { FLOATING_TAB_BAR_BOTTOM } from '../../navigation/tabBarLayout';
+import analyticsService, { getCountBand } from '../../services/analyticsService';
+import {
+  calculateGeminiHoroscopeMatch,
+  GeminiHoroscopeAnalysis,
+} from '../../services/geminiHoroscopeService';
+import GeminiHoroscopeModal from '../../components/GeminiHoroscopeModal';
+import CompatibilityBreakdownModal from '../../components/CompatibilityBreakdownModal';
 
 type Props = CompositeScreenProps<
   BottomTabScreenProps<MainTabParamList, 'Discover'>,
@@ -89,24 +111,30 @@ export default function DiscoverScreen({ navigation }: Props) {
   const totalNotifications = totalUnreadCount + pendingInterestsCount;
 
   const [activeFilter, setActiveFilter] = useState<
-    'Discover' | 'Matches' | 'NearYou' | 'Online'
+    'Discover' | 'Vedic' | 'Matches' | 'NearYou' | 'Online'
   >('Discover');
   const [celebration, setCelebration] = useState<{
     visible: boolean;
     name: string;
     avatarUrl?: string | null;
   }>({ visible: false, name: '' });
+  const [horoscopeTarget, setHoroscopeTarget] = useState<{
+    profile: Profile;
+    analysis: GeminiHoroscopeAnalysis;
+  } | null>(null);
   const [hiddenProfileIds, setHiddenProfileIds] = useState<Set<string>>(
     new Set(),
   );
+  const [compatTarget, setCompatTarget] = useState<Profile | null>(null);
 
-  const handleSkip = (profileId: string) => {
+
+  const handleSkip = useCallback((profileId: string) => {
     setHiddenProfileIds(prev => {
       const next = new Set(prev);
       next.add(profileId);
       return next;
     });
-  };
+  }, []);
 
   const visibleProfiles = discoverProfiles.filter(
     p => !hiddenProfileIds.has(p.id),
@@ -119,12 +147,55 @@ export default function DiscoverScreen({ navigation }: Props) {
     if (rel.status !== 'none') return false;
 
     // 2. Tab filters
+    if (activeFilter === 'Vedic') {
+      return Boolean(p.starNakshatra?.trim());
+    }
     if (activeFilter === 'Matches') return (p.compatibilityScore || 0) >= 70;
     if (activeFilter === 'NearYou')
       return sameProfileCity(currentUser?.profile?.city, p.city);
     if (activeFilter === 'Online') return !!p.isOnline;
     return true; // 'Discover'
   });
+
+  // Preload next profile images for high frame-rate scrolling
+  useEffect(() => {
+    if (filteredProfiles.length > 0) {
+      const urlsToPreload = filteredProfiles
+        .slice(0, 6)
+        .map(p => p.photo || p.photos?.[0])
+        .filter((url): url is string => Boolean(url && url.startsWith('http')));
+      if (urlsToPreload.length > 0 && typeof FastImage?.preload === 'function') {
+        try {
+          FastImage.preload(
+            urlsToPreload.map(uri => ({
+              uri,
+              priority: FastImage.priority?.high ?? 'high',
+            })),
+          );
+        } catch {
+          // Native image preloader unavailable in test environment
+        }
+      }
+    }
+  }, [filteredProfiles]);
+
+  // Track recommendation_view according to Slide 21 specifications
+  useEffect(() => {
+    if (!isLoadingProfiles) {
+      analyticsService
+        .trackRecommendationView({
+          cohort: currentUser?.profile?.city || 'unknown',
+          count_band: getCountBand(filteredProfiles.length),
+          response_latency: '<200ms',
+        })
+        .catch(() => {});
+    }
+  }, [
+    isLoadingProfiles,
+    activeFilter,
+    filteredProfiles.length,
+    currentUser?.profile?.city,
+  ]);
 
   const renderHeader = () => (
     <View style={styles.headerContainer}>
@@ -140,7 +211,7 @@ export default function DiscoverScreen({ navigation }: Props) {
               MyDear<Text style={styles.logoTextHighlight}>Partner</Text>
             </Text>
             <Text style={styles.logoSubText}>
-              MATRIMONY FOR A BETTER TOMORROW
+              TRUSTED MATCHMAKING
             </Text>
           </View>
         </View>
@@ -192,6 +263,23 @@ export default function DiscoverScreen({ navigation }: Props) {
               }
             >
               For You
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[
+              styles.filterTab,
+              activeFilter === 'Vedic' && styles.filterTabActive,
+            ]}
+            onPress={() => setActiveFilter('Vedic')}
+          >
+            <Text
+              style={
+                activeFilter === 'Vedic'
+                  ? styles.filterTabTextActive
+                  : styles.filterTabText
+              }
+            >
+              🪐 Horoscope listed
             </Text>
           </TouchableOpacity>
           <TouchableOpacity
@@ -263,24 +351,129 @@ export default function DiscoverScreen({ navigation }: Props) {
       );
     }
     return (
-      <View style={styles.emptyContainer}>
-        <Text style={styles.emptyText}>You've seen all recommendations!</Text>
-        <TouchableOpacity
-          style={styles.refreshBtn}
-          onPress={() => refreshDiscoverProfiles()}
-        >
-          <Text style={styles.refreshBtnText}>Load More</Text>
-        </TouchableOpacity>
+      <View style={styles.emptyCardContainer}>
+        <View style={styles.emptyIconCircle}>
+          <Compass size={28} color={colors.action} />
+        </View>
+        <Text style={styles.emptyTitle}>Expanding in your region</Text>
+        <Text style={styles.emptyDescription}>
+          We are actively onboarding verified profiles in your area. As new members matching your preferences join, they will appear here daily.
+        </Text>
+        <View style={styles.emptyTipBox}>
+          <Text style={styles.emptyTipText}>
+            💡 Thoughtful matchmaking uses information members choose to provide. Broadening your filters or completing your profile helps unlock more recommendations.
+          </Text>
+        </View>
+
+        <View style={styles.emptyActionRow}>
+          <TouchableOpacity
+            style={styles.emptyPrimaryBtn}
+            onPress={() => navigation.navigate('Search', { openFilters: true })}
+            accessibilityRole="button"
+          >
+            <SlidersHorizontal size={15} color="#FFF" />
+            <Text style={styles.emptyPrimaryBtnText}>Adjust Filters</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.emptySecondaryBtn}
+            onPress={() => refreshDiscoverProfiles()}
+            accessibilityRole="button"
+          >
+            <Text style={styles.emptySecondaryBtnText}>Refresh</Text>
+          </TouchableOpacity>
+        </View>
       </View>
     );
   };
 
+  const handleSendInterestAction = useCallback(
+    async (item: Profile) => {
+      triggerHaptic('success');
+      try {
+        await sendInterest(item.id, item.userId);
+        setCelebration({
+          visible: true,
+          name: item.name || 'your match',
+          avatarUrl: item.photo || item.photos?.[0],
+        });
+      } catch (err: any) {
+        if (isInterestQuotaError(err)) {
+          Alert.alert(
+            'Daily Interest Limit Reached',
+            err?.message ||
+              'You have reached your daily interest limit. Upgrade your plan to send more interests!',
+            [
+              { text: 'Cancel', style: 'cancel' },
+              {
+                text: 'Upgrade Plan',
+                onPress: () => navigation.navigate('Membership'),
+              },
+            ],
+          );
+        } else {
+          Alert.alert('Notice', err?.message ?? 'Could not send interest.');
+        }
+      }
+    },
+    [sendInterest, navigation],
+  );
+
+  const handleOpenHoroscope = useCallback(
+    (profile: Profile, analysis: GeminiHoroscopeAnalysis) => {
+      setHoroscopeTarget({ profile, analysis });
+    },
+    [],
+  );
+
+  const renderProfileItem = useCallback(
+    ({ item }: { item: Profile }) => (
+      <View style={[styles.profilePage, { height: pageHeight }]}>
+        <ProfileFeedCard
+          profile={item}
+          myProfile={currentUser?.profile}
+          navigation={navigation}
+          onSendInterest={() => handleSendInterestAction(item)}
+          onSkip={() => {
+            triggerHaptic('light');
+            handleSkip(item.id);
+          }}
+          isShortlisted={isShortlisted(item.id)}
+          onToggleShortlist={() => {
+            triggerHaptic('medium');
+            toggleShortlist(item.id);
+          }}
+          onOpenHoroscope={handleOpenHoroscope}
+        />
+        <View style={styles.scrollHint}>
+          <Text style={styles.scrollHintText}>
+            ↔ Swipe right to Connect, left to Pass ↓
+          </Text>
+        </View>
+      </View>
+    ),
+    [
+      pageHeight,
+      currentUser?.profile,
+      navigation,
+      handleSendInterestAction,
+      handleSkip,
+      isShortlisted,
+      toggleShortlist,
+      handleOpenHoroscope,
+    ],
+  );
+
   return (
-    <View style={styles.container}>
+    <GestureHandlerRootView style={styles.container}>
       <StatusBar barStyle="dark-content" />
 
-      <SafeAreaView style={{ flex: 1 }} edges={['top']}>
+      <ScreenContainer edges={['top', 'left', 'right']}>
         {renderHeader()}
+
+
+
+
         <View
           style={[
             styles.feedViewport,
@@ -314,80 +507,151 @@ export default function DiscoverScreen({ navigation }: Props) {
             }
             contentContainerStyle={styles.feedContent}
             showsVerticalScrollIndicator={false}
-            renderItem={({ item }) => (
-              <View style={[styles.profilePage, { height: pageHeight }]}>
-                <ProfileFeedCard
-                  profile={item}
-                  navigation={navigation}
-                  onSendInterest={async () => {
-                    triggerHaptic('success');
-                    try {
-                      await sendInterest(item.id, item.userId);
-                      setCelebration({
-                        visible: true,
-                        name: item.name || 'your match',
-                        avatarUrl: item.photo || item.photos?.[0],
-                      });
-                    } catch (err: any) {
-                      if (isInterestQuotaError(err)) {
-                        Alert.alert(
-                          'Daily Interest Limit Reached',
-                          err?.message || 'You have reached your daily interest limit. Upgrade your plan to send more interests!',
-                          [
-                            { text: 'Cancel', style: 'cancel' },
-                            { text: 'Upgrade Plan', onPress: () => navigation.navigate('Membership') },
-                          ],
-                        );
-                      } else {
-                        Alert.alert('Notice', err?.message ?? 'Could not send interest.');
-                      }
-                    }
-                  }}
-                  onSkip={() => {
-                    triggerHaptic('light');
-                    handleSkip(item.id);
-                  }}
-                  isShortlisted={isShortlisted(item.id)}
-                  onToggleShortlist={() => {
-                    triggerHaptic('medium');
-                    toggleShortlist(item.id);
-                  }}
-                />
-                <View style={styles.scrollHint}>
-                  <Text style={styles.scrollHintText}>
-                    Scroll down for next profile ↓
-                  </Text>
-                </View>
-              </View>
-            )}
+            initialNumToRender={2}
+            maxToRenderPerBatch={3}
+            windowSize={5}
+            removeClippedSubviews={Platform.OS === 'android'}
+            updateCellsBatchingPeriod={50}
+            renderItem={renderProfileItem}
           />
         </View>
-      </SafeAreaView>
+      </ScreenContainer>
       <MatchCelebrationModal
         visible={celebration.visible}
         profileName={celebration.name}
         avatarUrl={celebration.avatarUrl}
         onClose={() => setCelebration({ visible: false, name: '' })}
       />
-    </View>
+      {horoscopeTarget && (
+        <GeminiHoroscopeModal
+          visible={!!horoscopeTarget}
+          onClose={() => setHoroscopeTarget(null)}
+          analysis={horoscopeTarget.analysis}
+          myProfile={currentUser?.profile}
+          theirProfile={horoscopeTarget.profile}
+        />
+      )}
+      {compatTarget && (
+        <CompatibilityBreakdownModal
+          visible={!!compatTarget}
+          onClose={() => setCompatTarget(null)}
+          myProfile={currentUser?.profile}
+          theirProfile={compatTarget}
+        />
+      )}
+    </GestureHandlerRootView>
   );
 }
 
-const ProfileFeedCard = ({
+const ProfileFeedCard = React.memo(({
   profile,
+  myProfile,
   navigation,
   onSendInterest,
   onSkip,
   isShortlisted,
   onToggleShortlist,
+  onOpenHoroscope,
 }: {
   profile: Profile;
+  myProfile?: Profile | null;
   navigation: any;
   onSendInterest: () => void;
   onSkip: () => void;
   isShortlisted: boolean;
   onToggleShortlist: () => void;
+  onOpenHoroscope?: (profile: Profile, analysis: GeminiHoroscopeAnalysis) => void;
 }) => {
+  const translateX = useSharedValue(0);
+  const cardOpacity = useSharedValue(1);
+
+  useEffect(() => {
+    translateX.value = 0;
+    cardOpacity.value = 1;
+  }, [profile.id, translateX, cardOpacity]);
+
+  const panGesture = Gesture.Pan()
+    .activeOffsetX([-20, 20])
+    .failOffsetY([-20, 20])
+    .onUpdate(event => {
+      translateX.value = event.translationX;
+    })
+    .onEnd(event => {
+      if (event.translationX > 110) {
+        translateX.value = withTiming(500, { duration: 220 }, () => {
+          runOnJS(triggerHaptic)('success');
+          runOnJS(onSendInterest)();
+        });
+        cardOpacity.value = withTiming(0, { duration: 220 });
+      } else if (event.translationX < -110) {
+        translateX.value = withTiming(-500, { duration: 220 }, () => {
+          runOnJS(triggerHaptic)('light');
+          runOnJS(onSkip)();
+        });
+        cardOpacity.value = withTiming(0, { duration: 220 });
+      } else {
+        translateX.value = withSpring(0, { damping: 16, stiffness: 180 });
+      }
+    });
+
+  const animatedCardStyle = useAnimatedStyle(() => {
+    const rotate = interpolate(
+      translateX.value,
+      [-300, 0, 300],
+      [-14, 0, 14],
+      Extrapolation.CLAMP,
+    );
+    return {
+      transform: [
+        { translateX: translateX.value },
+        { rotate: `${rotate}deg` },
+      ],
+      opacity: cardOpacity.value,
+    };
+  });
+
+  const likeStampStyle = useAnimatedStyle(() => {
+    const opacity = interpolate(
+      translateX.value,
+      [25, 95],
+      [0, 1],
+      Extrapolation.CLAMP,
+    );
+    const scale = interpolate(
+      translateX.value,
+      [25, 95],
+      [0.85, 1.05],
+      Extrapolation.CLAMP,
+    );
+    return {
+      opacity,
+      transform: [{ scale }, { rotate: '-12deg' }],
+    };
+  });
+
+  const passStampStyle = useAnimatedStyle(() => {
+    const opacity = interpolate(
+      translateX.value,
+      [-25, -95],
+      [0, 1],
+      Extrapolation.CLAMP,
+    );
+    const scale = interpolate(
+      translateX.value,
+      [-25, -95],
+      [0.85, 1.05],
+      Extrapolation.CLAMP,
+    );
+    return {
+      opacity,
+      transform: [{ scale }, { rotate: '12deg' }],
+    };
+  });
+
+  const horoscope = React.useMemo(() => {
+    return calculateGeminiHoroscopeMatch(myProfile, profile);
+  }, [myProfile, profile]);
+
   // Format location string safely without dangling commas
   const locationParts = [profile.city, profile.state].filter(Boolean);
   const locationString = locationParts.join(', ');
@@ -407,127 +671,170 @@ const ProfileFeedCard = ({
   ].filter(Boolean) as string[];
 
   return (
-    <TouchableOpacity
-      activeOpacity={0.98}
-      style={styles.cardContainer}
-      onPress={() =>
-        navigation.navigate('ProfileDetail', { profileId: profile.id })
-      }
-    >
-      <View style={styles.imageContainer}>
-        <AuthImage
-          source={{ uri: profile.photo }}
-          style={StyleSheet.absoluteFill}
-          resizeMode="cover"
-        />
-        <LinearGradient
-          colors={['rgba(0,0,0,0.0)', 'rgba(0,0,0,0.2)', 'rgba(0,0,0,0.8)']}
-          locations={[0, 0.5, 1]}
-          style={StyleSheet.absoluteFill}
-        />
-
-        <View style={styles.badgesRow}>
-          {profile.isVerified !== false && (
-            <View style={styles.badgeVerified}>
-              <ShieldCheck size={14} color="#FFF" />
-              <Text style={styles.badgeText}>Verified</Text>
-            </View>
-          )}
-          {profile.isPremium && (
-            <View style={styles.badgePremium}>
-              <Star size={12} color="#FFF" fill="#FFF" />
-              <Text style={styles.badgeText}>Premium</Text>
-            </View>
-          )}
-        </View>
-
-        <View style={styles.imageInfoContent}>
-          <View style={styles.nameRow}>
-            <Text style={styles.nameText} numberOfLines={1}>
-              {profile.name}
-            </Text>
-            {profile.isOnline && <View style={styles.onlineDot} />}
-          </View>
-          <Text style={styles.basicSubText}>
-            {profile.age} yrs{profile.height ? ` • ${profile.height}` : ''}
-            {profile.compatibilityScore
-              ? `  |  ${profile.compatibilityScore}% Match`
-              : ''}
-          </Text>
-        </View>
-      </View>
-
-      <View style={styles.cardBody}>
-        {/* Chips Section */}
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.chipsContainer}
-          style={styles.chipsScroll}
+    <GestureDetector gesture={panGesture}>
+      <Animated.View style={[styles.cardContainer, animatedCardStyle]}>
+        <TouchableOpacity
+          activeOpacity={0.98}
+          style={styles.cardTouchWrapper}
+          onPress={() =>
+            navigation.navigate('ProfileDetail', { profileId: profile.id })
+          }
         >
-          {chips.map((chip, index) => (
-            <View key={index} style={styles.chip}>
-              <Text style={styles.chipText}>{chip}</Text>
-            </View>
-          ))}
-        </ScrollView>
-
-        {/* Bio Section */}
-        {profile.about ? (
-          <Text style={styles.bioText} numberOfLines={1}>
-            {profile.about}
-          </Text>
-        ) : null}
-
-        <View style={styles.divider} />
-
-        {/* Action Buttons Section */}
-        <View style={styles.actionsContainer}>
-          <TouchableOpacity
-            style={styles.actionBtnIconOnly}
-            accessibilityRole="button"
-            accessibilityLabel="Skip profile"
-            onPress={onSkip}
-          >
-            <X size={24} color="#5F6368" />
-          </TouchableOpacity>
-
-          <View style={styles.primaryActionsRow}>
-            <TouchableOpacity
-              style={[
-                styles.actionBtnTonal,
-                isShortlisted && { backgroundColor: colors.action },
-              ]}
-              onPress={onToggleShortlist}
+          {/* Stamps */}
+          <Animated.View style={[styles.stampLike, likeStampStyle]} pointerEvents="none">
+            <LinearGradient
+              colors={['#10B981', '#059669']}
+              style={styles.stampGradient}
             >
-              <Star
-                size={20}
-                color={isShortlisted ? '#FFF' : colors.action}
-                fill={isShortlisted ? '#FFF' : 'transparent'}
-              />
-              <Text
-                style={[
-                  styles.actionBtnTonalText,
-                  isShortlisted && { color: '#FFF' },
-                ]}
+              <Heart size={18} color="#FFF" fill="#FFF" />
+              <Text style={styles.stampText}>CONNECT</Text>
+            </LinearGradient>
+          </Animated.View>
+
+          <Animated.View style={[styles.stampPass, passStampStyle]} pointerEvents="none">
+            <LinearGradient
+              colors={['#EF4444', '#DC2626']}
+              style={styles.stampGradient}
+            >
+              <X size={18} color="#FFF" />
+              <Text style={styles.stampText}>PASS</Text>
+            </LinearGradient>
+          </Animated.View>
+
+          <View style={styles.imageContainer}>
+            <AuthImage
+              source={{ uri: profile.photo }}
+              style={StyleSheet.absoluteFill}
+              resizeMode="cover"
+            />
+            <LinearGradient
+              colors={['rgba(0,0,0,0.0)', 'rgba(0,0,0,0.2)', 'rgba(0,0,0,0.8)']}
+              locations={[0, 0.5, 1]}
+              style={StyleSheet.absoluteFill}
+            />
+
+            <View style={styles.badgesRow}>
+              {profile.isVerified !== false && (
+                <View style={styles.badgeVerified}>
+                  <ShieldCheck size={14} color="#FFF" />
+                  <Text style={styles.badgeText}>Verified</Text>
+                </View>
+              )}
+              {profile.isPremium && (
+                <View style={styles.badgePremium}>
+                  <Star size={12} color="#FFF" fill="#FFF" />
+                  <Text style={styles.badgeText}>Premium</Text>
+                </View>
+              )}
+              {/* Kundali Gunas Badge */}
+              <TouchableOpacity
+                style={styles.badgeKundali}
+                activeOpacity={0.8}
+                onPress={e => {
+                  e.stopPropagation?.();
+                  triggerHaptic('light');
+                  onOpenHoroscope?.(profile, horoscope);
+                }}
               >
-                {isShortlisted ? 'Shortlisted' : 'Shortlist'}
-              </Text>
-            </TouchableOpacity>
+                <Icon name="planet" size={12} color="#FDE68A" style={{ marginRight: 3 }} />
+                <Text style={styles.badgeKundaliText}>
+                  Profile insights
+                </Text>
+              </TouchableOpacity>
+            </View>
 
-            <TouchableOpacity
-              style={styles.actionBtnSolid}
-              onPress={onSendInterest}
-            >
-              <Heart size={20} color="#FFF" fill="#FFF" />
-              <Text style={styles.actionBtnSolidText}>Connect</Text>
-            </TouchableOpacity>
+            <View style={styles.imageInfoContent}>
+              <View style={styles.nameRow}>
+                <Text style={styles.nameText} numberOfLines={1}>
+                  {profile.name}
+                </Text>
+                {profile.isOnline && <View style={styles.onlineDot} />}
+              </View>
+              <Text style={styles.basicSubText}>
+                {profile.age} yrs{profile.height ? ` • ${profile.height}` : ''}
+                {profile.compatibilityScore
+                  ? `  |  ${profile.compatibilityScore}% Match`
+                  : ''}
+              </Text>
+            </View>
           </View>
-        </View>
-      </View>
-    </TouchableOpacity>
+
+          <View style={styles.cardBody}>
+            {/* Chips Section */}
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.chipsContainer}
+              style={styles.chipsScroll}
+            >
+              {chips.map((chip, index) => (
+                <View key={index} style={styles.chip}>
+                  <Text style={styles.chipText}>{chip}</Text>
+                </View>
+              ))}
+            </ScrollView>
+
+            {/* Bio Section */}
+            {profile.about ? (
+              <Text style={styles.bioText} numberOfLines={1}>
+                {profile.about}
+              </Text>
+            ) : null}
+
+            <View style={styles.divider} />
+
+            {/* Action Buttons Section */}
+            <View style={styles.actionsContainer}>
+              <AnimatedButton
+                style={styles.actionBtnIconOnly}
+                accessibilityRole="button"
+                accessibilityLabel="Skip profile"
+                activeScale={0.88}
+                onPress={onSkip}
+              >
+                <X size={24} color="#5F6368" />
+              </AnimatedButton>
+
+              <View style={styles.primaryActionsRow}>
+                <AnimatedButton
+                  style={[
+                    styles.actionBtnTonal,
+                    isShortlisted && { backgroundColor: colors.action },
+                  ]}
+                  activeScale={0.93}
+                  onPress={onToggleShortlist}
+                >
+                  <Star
+                    size={20}
+                    color={isShortlisted ? '#FFF' : colors.action}
+                    fill={isShortlisted ? '#FFF' : 'transparent'}
+                  />
+                  <Text
+                    style={[
+                      styles.actionBtnTonalText,
+                      isShortlisted && { color: '#FFF' },
+                    ]}
+                  >
+                    {isShortlisted ? 'Shortlisted' : 'Shortlist'}
+                  </Text>
+                </AnimatedButton>
+
+                <AnimatedButton
+                  style={styles.actionBtnSolid}
+                  activeScale={0.93}
+                  onPress={onSendInterest}
+                >
+                  <Heart size={20} color="#FFF" fill="#FFF" />
+                  <Text style={styles.actionBtnSolidText}>Connect</Text>
+                </AnimatedButton>
+              </View>
+            </View>
+          </View>
+        </TouchableOpacity>
+      </Animated.View>
+    </GestureDetector>
   );
-};
+});
 
 const styles = StyleSheet.create({
   feedViewport: { flex: 1, minHeight: 0 },
@@ -543,7 +850,7 @@ const styles = StyleSheet.create({
   },
   headerContainer: {
     backgroundColor: colors.background,
-    paddingTop: 8,
+    paddingTop: 4,
     paddingBottom: 4,
   },
   headerRow: {
@@ -551,7 +858,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingHorizontal: 16,
-    marginBottom: 16,
+    marginBottom: 10,
   },
   logoContainer: {
     flexDirection: 'row',
@@ -671,6 +978,95 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     fontSize: 15,
   },
+  emptyCardContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 24,
+    marginHorizontal: 16,
+    marginTop: 24,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 24,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.05,
+    shadowRadius: 12,
+    elevation: 3,
+  },
+  emptyIconCircle: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    backgroundColor: 'rgba(217,119,6,0.1)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 14,
+  },
+  emptyTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#111827',
+    textAlign: 'center',
+    marginBottom: 8,
+  },
+  emptyDescription: {
+    fontSize: 14,
+    color: '#6B7280',
+    textAlign: 'center',
+    lineHeight: 20,
+    marginBottom: 16,
+    paddingHorizontal: 8,
+  },
+  emptyTipBox: {
+    backgroundColor: '#F9FAFB',
+    borderRadius: 12,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    marginBottom: 20,
+    borderWidth: 1,
+    borderColor: '#F3F4F6',
+    width: '100%',
+  },
+  emptyTipText: {
+    fontSize: 12,
+    color: '#4B5563',
+    lineHeight: 17,
+    textAlign: 'center',
+  },
+  emptyActionRow: {
+    flexDirection: 'row',
+    gap: 12,
+    width: '100%',
+    justifyContent: 'center',
+  },
+  emptyPrimaryBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: colors.action,
+    paddingHorizontal: 18,
+    paddingVertical: 12,
+    borderRadius: 100,
+  },
+  emptyPrimaryBtnText: {
+    color: '#FFF',
+    fontWeight: '700',
+    fontSize: 14,
+  },
+  emptySecondaryBtn: {
+    paddingHorizontal: 18,
+    paddingVertical: 12,
+    borderRadius: 100,
+    backgroundColor: '#F3F4F6',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+  },
+  emptySecondaryBtnText: {
+    color: '#374151',
+    fontWeight: '600',
+    fontSize: 14,
+  },
 
   /* Material Design 3 Card Styling */
   cardContainer: {
@@ -690,6 +1086,44 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'rgba(0,0,0,0.03)',
   },
+  cardTouchWrapper: {
+    flex: 1,
+    minHeight: 0,
+    width: '100%',
+  },
+  stampLike: {
+    position: 'absolute',
+    top: 32,
+    left: 20,
+    zIndex: 999,
+  },
+  stampPass: {
+    position: 'absolute',
+    top: 32,
+    right: 20,
+    zIndex: 999,
+  },
+  stampGradient: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 12,
+    borderWidth: 2,
+    borderColor: '#FFF',
+    gap: 6,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 8,
+  },
+  stampText: {
+    color: '#FFF',
+    fontSize: 15,
+    fontWeight: '900',
+    letterSpacing: 1.2,
+  },
   imageContainer: {
     flex: 1,
     minHeight: 100,
@@ -701,7 +1135,9 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: 16,
     left: 16,
+    right: 16,
     flexDirection: 'row',
+    flexWrap: 'wrap',
     gap: 8,
   },
   badgeVerified: {
@@ -721,6 +1157,21 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     borderRadius: 8,
     gap: 4,
+  },
+  badgeKundali: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(120, 53, 15, 0.9)',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#F59E0B',
+  },
+  badgeKundaliText: {
+    color: '#FEF3C7',
+    fontSize: 12,
+    fontWeight: '700',
   },
   badgeText: {
     color: '#FFF',

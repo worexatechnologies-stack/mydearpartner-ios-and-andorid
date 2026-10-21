@@ -24,7 +24,7 @@ interface ProfileCardProps {
   index?: number;
 }
 
-export default function ProfileCard({
+function ProfileCard({
   profile,
   onPress,
   rightAction,
@@ -416,3 +416,18 @@ const styles = StyleSheet.create({
     color: colors.white,
   },
 });
+
+function areEqual(prevProps: ProfileCardProps, nextProps: ProfileCardProps) {
+  return (
+    prevProps.profile.id === nextProps.profile.id &&
+    prevProps.isShortlisted === nextProps.isShortlisted &&
+    prevProps.showShortlist === nextProps.showShortlist &&
+    prevProps.index === nextProps.index &&
+    prevProps.profile.isVerified === nextProps.profile.isVerified &&
+    prevProps.profile.photo === nextProps.profile.photo &&
+    prevProps.profile.name === nextProps.profile.name &&
+    prevProps.rightAction === nextProps.rightAction
+  );
+}
+
+export default React.memo(ProfileCard, areEqual);

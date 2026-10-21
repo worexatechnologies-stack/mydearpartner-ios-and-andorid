@@ -1,41 +1,18 @@
 <?xml version="1.0" encoding="utf-8"?>
 <layer-list xmlns:android="http://schemas.android.com/apk/res/android">
-    <!-- Brand launch background -->
+    <!-- 2026 Minimalist Luxury Background -->
     <item>
-        <shape android:shape="rectangle">
-            <solid android:color="#231C2C" />
-        </shape>
+        <color android:color="#FAF8F7" />
     </item>
 
-    <!-- Top lighter glow arc -->
+    <!-- Center Brand Logo -->
     <item
-        android:top="-220dp"
-        android:left="-100dp"
-        android:right="-100dp"
-        android:bottom="480dp">
-        <shape android:shape="oval">
-            <solid android:color="#423047" />
-            <alpha android:value="0.6" />
-        </shape>
-    </item>
-
-    <!-- Centered logo -->
-    <item
-        android:gravity="center"
-        android:bottom="120dp">
+        android:width="100dp"
+        android:height="88dp"
+        android:gravity="center">
         <bitmap
-            android:src="@mipmap/ic_launcher"
+            android:src="@drawable/splash_logo"
             android:gravity="center"
             android:tileMode="disabled" />
-    </item>
-
-    <!-- Bottom darker wave -->
-    <item android:top="620dp">
-        <shape android:shape="rectangle">
-            <solid android:color="#302432" />
-            <corners
-                android:topLeftRadius="200dp"
-                android:topRightRadius="200dp" />
-        </shape>
     </item>
 </layer-list>

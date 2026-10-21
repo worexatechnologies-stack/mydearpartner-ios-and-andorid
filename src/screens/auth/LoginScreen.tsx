@@ -129,7 +129,7 @@ export default function LoginScreen() {
 
             <View style={styles.brand}>
               <Image
-                source={require('../../assets/logo.png')}
+                source={require('../../assets/images/logo.png')}
                 style={styles.brandLogo}
                 resizeMode="contain"
               />
@@ -138,7 +138,7 @@ export default function LoginScreen() {
                   MyDear<Text style={{ color: '#FF1E66' }}>Partner</Text>
                 </Text>
                 <Text style={styles.brandTagline}>
-                  REAL PEOPLE. REAL CONNECTIONS.
+                  TRUSTED MATCHMAKING
                 </Text>
               </View>
             </View>
