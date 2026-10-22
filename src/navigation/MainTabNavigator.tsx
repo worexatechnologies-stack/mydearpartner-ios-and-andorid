@@ -1,3 +1,4 @@
+import { colors } from '../theme/theme';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import React from 'react';
 import {
@@ -6,13 +7,7 @@ import {
   View,
   useWindowDimensions,
 } from 'react-native';
-import {
-  Home,
-  Search,
-  Send,
-  MessageCircle,
-  CircleUser,
-} from 'lucide-react-native';
+import Icon from 'react-native-vector-icons/Ionicons';
 import OfflineBanner from '../components/OfflineBanner';
 import ChatsListScreen from '../screens/main/ChatsListScreen';
 import DiscoverScreen from '../screens/main/DiscoverScreen';
@@ -27,78 +22,40 @@ import { MainTabParamList } from './types';
 
 const Tab = createBottomTabNavigator<MainTabParamList>();
 
-type TabConfigItem = {
-  label: string;
-  renderIcon: (props: { focused: boolean; color: string }) => React.ReactNode;
-};
-
-const tabConfig: Record<keyof MainTabParamList, TabConfigItem> = {
-  Discover: {
-    label: 'Matches',
-    renderIcon: ({ focused }) => (
-      <Home
-        size={22}
-        color={focused ? '#FFFFFF' : 'rgba(255, 255, 255, 0.72)'}
-        fill={focused ? '#FFFFFF' : 'transparent'}
-        strokeWidth={focused ? 2.5 : 2}
-      />
-    ),
-  },
-  Search: {
-    label: 'Search',
-    renderIcon: ({ focused }) => (
-      <Search
-        size={22}
-        color={focused ? '#FFFFFF' : 'rgba(255, 255, 255, 0.72)'}
-        strokeWidth={focused ? 2.6 : 2}
-      />
-    ),
-  },
-  Interests: {
-    label: 'Activity',
-    renderIcon: ({ focused }) => (
-      <Send
-        size={21}
-        color={focused ? '#FFFFFF' : 'rgba(255, 255, 255, 0.72)'}
-        fill={focused ? '#FFFFFF' : 'transparent'}
-        strokeWidth={focused ? 2.4 : 2}
-      />
-    ),
-  },
+const tabConfig: Record<
+  keyof MainTabParamList,
+  { icon: string; iconOutline: string; label: string }
+> = {
+  Discover: { icon: 'heart', iconOutline: 'heart-outline', label: 'Matches' },
+  Search: { icon: 'search', iconOutline: 'search-outline', label: 'Search' },
+  Interests: { icon: 'flash', iconOutline: 'flash-outline', label: 'Activity' },
   Chats: {
+    icon: 'chatbubble',
+    iconOutline: 'chatbubble-outline',
     label: 'Chats',
-    renderIcon: ({ focused }) => (
-      <MessageCircle
-        size={22}
-        color={focused ? '#FFFFFF' : 'rgba(255, 255, 255, 0.72)'}
-        fill={focused ? '#FFFFFF' : 'transparent'}
-        strokeWidth={focused ? 2.5 : 2}
-      />
-    ),
   },
   MyProfile: {
+    icon: 'person',
+    iconOutline: 'person-outline',
     label: 'Profile',
-    renderIcon: ({ focused }) => (
-      <CircleUser
-        size={22}
-        color={focused ? '#FFFFFF' : 'rgba(255, 255, 255, 0.72)'}
-        strokeWidth={focused ? 2.5 : 2}
-      />
-    ),
   },
 };
 
 function TabIcon({
   routeName,
   focused,
+  color,
   unreadCount,
   pendingInterestsCount,
+  isSmallScreen,
   hasProfileAlert,
 }: {
   routeName: keyof MainTabParamList;
   focused: boolean;
+  color: string;
   unreadCount: number;
   pendingInterestsCount: number;
+  isSmallScreen: boolean;
   hasProfileAlert?: boolean;
 }) {
   const config = tabConfig[routeName];
@@ -108,85 +65,89 @@ function TabIcon({
     routeName === 'Interests' && pendingInterestsCount > 0;
   const interestBadgeText =
     pendingInterestsCount > 9 ? '9+' : String(pendingInterestsCount);
+  const iconSize = isSmallScreen ? 22 : 24;
 
   return (
     <View style={styles.iconContainer}>
-      <View style={[styles.iconWrapper, focused && styles.iconActivePill]}>
-        {config.renderIcon({
-          focused,
-          color: focused ? '#FFFFFF' : 'rgba(255, 255, 255, 0.72)',
-        })}
-        {showBadge && (
-          <View style={styles.badgeContainer}>
-            <Text style={styles.badgeText}>{badgeText}</Text>
-          </View>
-        )}
-        {showInterestBadge && (
-          <View style={styles.badgeContainer}>
-            <Text style={styles.badgeText}>{interestBadgeText}</Text>
-          </View>
-        )}
-        {routeName === 'MyProfile' && hasProfileAlert && (
-          <View style={styles.profileAlertDot} />
-        )}
+      {focused && <View style={styles.iconActiveBg} />}
+      <View>
+        <Icon
+          name={focused ? config.icon : config.iconOutline}
+          size={iconSize}
+          color={color}
+        />
       </View>
+      {showBadge && (
+        <View style={styles.badgeContainer}>
+          <Text style={styles.badgeText}>{badgeText}</Text>
+        </View>
+      )}
+      {showInterestBadge && (
+        <View style={[styles.badgeContainer, styles.interestBadge]}>
+          <Text style={styles.badgeText}>{interestBadgeText}</Text>
+        </View>
+      )}
+      {routeName === 'MyProfile' && hasProfileAlert && (
+        <View style={styles.profileAlertDot} />
+      )}
     </View>
   );
 }
 
 export default function MainTabNavigator() {
   const stats = useAppStats();
-  const { width } = useWindowDimensions();
+  const { width, fontScale } = useWindowDimensions();
   const insets = useSafeAreaInsets();
-  const isTablet = width >= 600;
   const isSmallScreen = width < 360;
-
-  // Floating dark pill dock dimensions
-  const barWidth = isTablet
-    ? Math.min(480, width - 64)
-    : isSmallScreen
-    ? width - 24
-    : Math.min(380, width - 40);
-  const barLeft = (width - barWidth) / 2;
-  const tabBarHeight = 62;
+  const isTablet = width >= 600;
+  const availableWidth = width - insets.left - insets.right;
+  const horizontalMargin = isSmallScreen ? 20 : 32;
+  const barWidth = isTablet ? 560 : Math.min(560, Math.max(0, availableWidth - horizontalMargin));
+  const barLeft = insets.left + (availableWidth - barWidth) / 2;
+  const tabBarHeight = 72 + Math.max(0, fontScale - 1) * 14;
 
   return (
     <View style={{ flex: 1 }}>
       <Tab.Navigator
         screenOptions={({ route }) => ({
           headerShown: false,
-          tabBarActiveTintColor: '#FFFFFF',
-          tabBarInactiveTintColor: 'rgba(255, 255, 255, 0.72)',
-          tabBarShowLabel: false,
+          tabBarActiveTintColor: colors.action,
+          tabBarInactiveTintColor: colors.textSecondary,
+          tabBarShowLabel: true,
+          tabBarLabelStyle: {
+            fontSize: isSmallScreen ? 10 : 11,
+            fontWeight: '700',
+            marginBottom: 10,
+          },
           tabBarHideOnKeyboard: true,
           tabBarAccessibilityLabel: tabConfig[route.name].label,
           tabBarStyle: [
             styles.tabBar,
             {
               height: tabBarHeight,
-              bottom: Math.max(insets.bottom, FLOATING_TAB_BAR_BOTTOM) + 4,
+              bottom: Math.max(insets.bottom, FLOATING_TAB_BAR_BOTTOM),
               left: barLeft,
               right: barLeft,
               start: barLeft,
               end: barLeft,
               width: barWidth,
-              paddingHorizontal: isSmallScreen ? 4 : 8,
+              paddingHorizontal: isSmallScreen ? 2 : 4,
               paddingBottom: 0,
             },
           ],
+          tabBarLabelPosition: 'below-icon',
           tabBarItemStyle: {
+            paddingTop: 8,
             height: tabBarHeight,
-            justifyContent: 'center',
-            alignItems: 'center',
-            paddingTop: 0,
-            paddingBottom: 0,
           },
-          tabBarIcon: ({ focused }) => (
+          tabBarIcon: ({ color, focused }) => (
             <TabIcon
               routeName={route.name as keyof MainTabParamList}
               focused={focused}
+              color={color}
               unreadCount={stats.unreadChats}
               pendingInterestsCount={stats.pendingInterests}
+              isSmallScreen={isSmallScreen}
               hasProfileAlert={stats.nearingInterestLimit || stats.newMatchesCount > 0}
             />
           ),
@@ -226,61 +187,59 @@ export default function MainTabNavigator() {
 const styles = StyleSheet.create({
   tabBar: {
     position: 'absolute',
-    backgroundColor: 'rgba(22, 22, 26, 0.96)',
-    borderRadius: 40,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 22,
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.12)',
-    elevation: 12,
-    shadowColor: '#000000',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.35,
-    shadowRadius: 16,
+    borderColor: colors.roseBorder,
+    elevation: 5,
+    shadowColor: '#49313E',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.08,
+    shadowRadius: 10,
   },
   iconContainer: {
     alignItems: 'center',
     justifyContent: 'center',
-    flex: 1,
+    width: 44,
+    height: 36,
   },
-  iconWrapper: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    minWidth: 44,
-    height: 40,
-    borderRadius: 20,
-    position: 'relative',
-  },
-  iconActivePill: {
-    backgroundColor: 'rgba(255, 255, 255, 0.22)',
-    paddingHorizontal: 14,
+  iconActiveBg: {
+    position: 'absolute',
+    width: 44,
+    height: 34,
+    borderRadius: 13,
+    backgroundColor: colors.surfaceTint,
+    top: 1,
   },
   badgeContainer: {
     position: 'absolute',
-    top: -3,
-    right: -5,
-    backgroundColor: '#EF4444',
-    minWidth: 18,
-    height: 18,
-    borderRadius: 9,
+    top: -4,
+    right: -4,
+    backgroundColor: colors.action,
+    minWidth: 20,
+    height: 20,
+    borderRadius: 10,
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 2,
-    borderColor: '#16161A',
-    paddingHorizontal: 3,
+    borderColor: '#FFFFFF',
+    paddingHorizontal: 4,
   },
+  interestBadge: { backgroundColor: colors.primaryDark },
   badgeText: {
     color: '#FFFFFF',
-    fontSize: 9.5,
+    fontSize: 10,
     fontWeight: '900',
   },
   profileAlertDot: {
     position: 'absolute',
-    top: 1,
-    right: 2,
-    width: 8,
-    height: 8,
-    borderRadius: 4,
+    top: -2,
+    right: -2,
+    width: 9,
+    height: 9,
+    borderRadius: 5,
     backgroundColor: '#FBBF24',
     borderWidth: 1.5,
-    borderColor: '#16161A',
+    borderColor: '#FFF',
   },
 });
