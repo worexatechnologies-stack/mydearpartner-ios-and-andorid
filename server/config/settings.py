@@ -15,8 +15,16 @@ elif not DEBUG and (len(SECRET_KEY) < 50 or len(set(SECRET_KEY)) < 5 or
                     SECRET_KEY.startswith(('django-insecure-', 'replace-', 'development-'))):
     raise ImproperlyConfigured('DJANGO_SECRET_KEY must be a strong, unique production secret.')
 ALLOWED_HOSTS = os.environ.get('DJANGO_ALLOWED_HOSTS', 'localhost').split(',')
+SESSION_COOKIE_SECURE = not DEBUG
+CSRF_COOKIE_SECURE = not DEBUG
+SECURE_SSL_REDIRECT = os.environ.get('DJANGO_SSL_REDIRECT', str(not DEBUG)).lower() == 'true'
+SECURE_HSTS_SECONDS = int(os.environ.get('DJANGO_HSTS_SECONDS', '0' if DEBUG else '3600'))
+# Enable only behind a proxy that replaces this header and restricts upstream access.
+if os.environ.get('DJANGO_TRUST_PROXY_HTTPS', 'false').lower() == 'true':
+    SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
 INSTALLED_APPS = ['django.contrib.admin', 'django.contrib.auth', 'django.contrib.contenttypes', 'django.contrib.sessions', 'django.contrib.messages', 'django.contrib.staticfiles', 'rest_framework', 'drf_spectacular', 'account_sessions', 'memberships', 'payments', 'safety']
 MIDDLEWARE = ['django.middleware.security.SecurityMiddleware', 'django.contrib.sessions.middleware.SessionMiddleware', 'django.middleware.common.CommonMiddleware', 'django.middleware.csrf.CsrfViewMiddleware', 'django.contrib.auth.middleware.AuthenticationMiddleware', 'django.contrib.messages.middleware.MessageMiddleware']
+MIDDLEWARE.append('django.middleware.clickjacking.XFrameOptionsMiddleware')
 ROOT_URLCONF = 'config.urls'
 TEMPLATES = [{'BACKEND': 'django.template.backends.django.DjangoTemplates', 'DIRS': [], 'APP_DIRS': True, 'OPTIONS': {'context_processors': ['django.template.context_processors.request', 'django.contrib.auth.context_processors.auth', 'django.contrib.messages.context_processors.messages']}}]
 WSGI_APPLICATION = 'config.wsgi.application'
@@ -25,13 +33,15 @@ def _parse_db_url(url_str: str) -> dict:
     parsed = urllib.parse.urlparse(url_str)
     return {
         'ENGINE': 'django.db.backends.postgresql',
-        'NAME': parsed.path.lstrip('/'),
-        'USER': parsed.username or '',
-        'PASSWORD': parsed.password or '',
+        'NAME': urllib.parse.unquote(parsed.path.lstrip('/')),
+        'USER': urllib.parse.unquote(parsed.username or ''),
+        'PASSWORD': urllib.parse.unquote(parsed.password or ''),
         'HOST': parsed.hostname or 'localhost',
         'PORT': parsed.port or 5432,
         'CONN_MAX_AGE': int(os.environ.get('DB_CONN_MAX_AGE', '60')),
         'CONN_HEALTH_CHECKS': True,
+        # The supplied Compose stack uses PgBouncer transaction pooling.
+        'DISABLE_SERVER_SIDE_CURSORS': True,
     }
 
 DATABASES = {'default': {'ENGINE': 'django.db.backends.sqlite3', 'NAME': BASE_DIR / 'db.sqlite3'}}

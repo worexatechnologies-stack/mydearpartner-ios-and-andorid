@@ -19,10 +19,10 @@ def verify_client_signature(order_id, payment_id, signature):
 @transaction.atomic
 def activate_payment(*, order_id, payment_id):
     payment = Payment.objects.select_for_update().select_related('plan').get(razorpay_order_id=order_id)
-    if payment.status == Payment.Status.PAID:
-        return payment
     if payment.razorpay_payment_id and payment.razorpay_payment_id != payment_id:
         raise ValueError('Order already has a different payment ID')
+    if payment.status == Payment.Status.PAID:
+        return payment
     membership, _ = Membership.objects.select_for_update().get_or_create(user=payment.user, defaults={'plan': payment.plan})
     membership.activate_or_extend(payment.plan)
     payment.status, payment.razorpay_payment_id, payment.activated_at = Payment.Status.PAID, payment_id, timezone.now()

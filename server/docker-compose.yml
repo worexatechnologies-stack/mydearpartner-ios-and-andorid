@@ -8,7 +8,7 @@ services:
         condition: service_healthy
       redis:
         condition: service_started
-    ports: ["8000:8000"]
+    ports: ["127.0.0.1:8000:8000"]
 
   worker:
     build: .
@@ -34,7 +34,7 @@ services:
   pgbouncer:
     image: edoburu/pgbouncer:v1.22.1
     restart: unless-stopped
-    ports: ["6432:6432"]
+    ports: ["127.0.0.1:6432:6432"]
     environment:
       DB_HOST: db
       DB_PORT: 5432
@@ -46,7 +46,7 @@ services:
       DEFAULT_POOL_SIZE: 25
       MIN_POOL_SIZE: 5
       RESERVE_POOL_SIZE: 5
-      AUTH_TYPE: any
+      AUTH_TYPE: scram-sha-256
     healthcheck:
       test: ["CMD", "pg_isready", "-h", "127.0.0.1", "-p", "6432"]
       interval: 5s

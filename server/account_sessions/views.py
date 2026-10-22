@@ -13,6 +13,7 @@ from rest_framework_simplejwt.views import TokenRefreshView
 from .authentication import SingleSessionAuthentication, require_current_session
 from .models import AccountSession, SessionDevice
 from .services import issue_session_tokens
+from drf_spectacular.utils import extend_schema, inline_serializer
 
 
 class LoginThrottle(AnonRateThrottle):
@@ -33,6 +34,10 @@ class LoginView(APIView):
     def get_authenticate_header(self, request):
         return 'Bearer'
 
+    @extend_schema(request=LoginInput, responses=inline_serializer('SessionLoginResponse', fields={
+        'access': serializers.CharField(), 'refresh': serializers.CharField(),
+        'user': serializers.DictField(),
+    }))
     def post(self, request):
         serializer = LoginInput(data=request.data)
         serializer.is_valid(raise_exception=True)
@@ -68,6 +73,7 @@ class SessionStatusView(APIView):
     authentication_classes = [SingleSessionAuthentication]
     permission_classes = [IsAuthenticated]
 
+    @extend_schema(responses=inline_serializer('SessionStatusResponse', fields={'active': serializers.BooleanField()}))
     def get(self, request):
         response = Response({'active': True})
         response['Cache-Control'] = 'no-store'
@@ -75,6 +81,7 @@ class SessionStatusView(APIView):
 
 
 class SessionLogoutView(SessionStatusView):
+    @extend_schema(request=None, responses={204: None})
     def post(self, request):
         # Old/in-flight logout must never remove a later login's session.
         AccountSession.objects.filter(user=request.user, session_id=request.auth['mdp_sid']).delete()
@@ -86,6 +93,7 @@ class SessionDeviceInput(serializers.Serializer):
 
 
 class SessionDeviceView(SessionStatusView):
+    @extend_schema(request=SessionDeviceInput, responses={204: None})
     def post(self, request):
         serializer = SessionDeviceInput(data=request.data)
         serializer.is_valid(raise_exception=True)

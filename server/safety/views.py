@@ -13,12 +13,23 @@ from .models import Eligibility, SafetyRequest
 from .permissions import is_eligible
 from .policies import DOCUMENTS, POLICY_VERSION
 from .serializers import EligibilitySerializer, ReportSerializer, DeletionSerializer
+from rest_framework import serializers
+from drf_spectacular.utils import extend_schema, inline_serializer
+
+eligibility_response = inline_serializer('EligibilityResponse', fields={
+    'eligible': serializers.BooleanField(), 'policy_version': serializers.CharField(),
+})
+receipt_response = inline_serializer('SafetyReceipt', fields={
+    'id': serializers.UUIDField(), 'status': serializers.CharField(),
+})
 
 
 class SafetyThrottle(UserRateThrottle):
     rate = '30/hour'
 
 
+@extend_schema(methods=['GET'], responses=eligibility_response)
+@extend_schema(methods=['POST'], request=EligibilitySerializer, responses=eligibility_response)
 @api_view(['GET', 'POST'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([SafetyThrottle])
@@ -44,6 +55,7 @@ def received(record):
     return Response({'id': str(record.id), 'status': 'received'}, status=202)
 
 
+@extend_schema(request=ReportSerializer, responses={202: receipt_response})
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([SafetyThrottle])
@@ -59,6 +71,7 @@ def report(request):
     return received(record)
 
 
+@extend_schema(request=DeletionSerializer, responses={202: receipt_response})
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([SafetyThrottle])

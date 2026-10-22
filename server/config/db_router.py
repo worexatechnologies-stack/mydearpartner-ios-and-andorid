@@ -11,6 +11,7 @@ import random
 import threading
 from typing import Any, List, Optional
 from django.conf import settings
+from django.db import connections
 
 
 class DatabaseLoadBalancerRouter:
@@ -18,9 +19,10 @@ class DatabaseLoadBalancerRouter:
     Primary/Replica Read-Write Split & Load Balancing Database Router.
 
     - Writes (INSERT, UPDATE, DELETE): always routed to 'default' (primary/leader).
-    - Reads (SELECT): load-balanced across configured replica aliases
+    - Eligible reads (SELECT): load-balanced across configured replica aliases
       ('replica', 'replica_1', 'replica_2', etc.) via round-robin or random.
-      If no replicas are configured or available, seamlessly falls back to 'default'.
+      If no replicas are configured, uses 'default'. No outage failover is provided.
+      Security/payment reads and primary-transaction reads use 'default'.
     - Migrations: only executed on 'default'.
     - Relations: permitted between models within the replicated cluster.
     """
@@ -45,6 +47,12 @@ class DatabaseLoadBalancerRouter:
         Distribute read queries across read replicas if available,
         otherwise fall back to the primary database ('default').
         """
+        # Replication lag must never restore a revoked session or stale payment,
+        # membership, or safety permissions. Atomic reads must share the write DB.
+        if model._meta.app_label in {
+            'auth', 'sessions', 'account_sessions', 'payments', 'memberships', 'safety'
+        } or connections['default'].in_atomic_block:
+            return 'default'
         replicas = self.get_read_replicas()
         if not replicas:
             return 'default'

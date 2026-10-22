@@ -33,7 +33,7 @@ class PaymentActivationTests(TestCase):
 
     @override_settings(RAZORPAY_WEBHOOK_SECRET='test-webhook-secret')
     def test_duplicate_captured_webhook_does_not_double_activate(self):
-        payload = {'event_id': 'evt_123', 'event': 'payment.captured', 'payload': {'payment': {'entity': {'id': 'pay_test_123', 'order_id': self.payment.razorpay_order_id}}}}
+        payload = {'event_id': 'evt_123', 'event': 'payment.captured', 'payload': {'payment': {'entity': {'id': 'pay_test_123', 'order_id': self.payment.razorpay_order_id, 'amount': 100, 'currency': 'INR'}}}}
         raw = json.dumps(payload, separators=(',', ':')).encode()
         signature = hmac.new(settings.RAZORPAY_WEBHOOK_SECRET.encode(), raw, hashlib.sha256).hexdigest()
         client = APIClient()
@@ -53,18 +53,39 @@ class PaymentActivationTests(TestCase):
         self.assertEqual(response.data['amount'], 100)
         mocked_client.return_value.order.create.assert_called_once()
 
-    def webhook(self, event_type='payment.captured', event_id=None, header_id=None):
+    def webhook(self, event_type='payment.captured', event_id=None, header_id=None, amount=100, currency='INR', authorization=None):
         payload = {'event': event_type, 'payload': {'payment': {'entity': {
-            'id': 'pay_test_123', 'order_id': self.payment.razorpay_order_id}}}}
+            'id': 'pay_test_123', 'order_id': self.payment.razorpay_order_id,
+            'amount': amount, 'currency': currency}}}}
         if event_id:
             payload['event_id'] = event_id
         raw = json.dumps(payload).encode()
         signature = hmac.new(settings.RAZORPAY_WEBHOOK_SECRET.encode(), raw, hashlib.sha256).hexdigest()
         headers = {'HTTP_X_RAZORPAY_SIGNATURE': signature}
+        if authorization:
+            headers['HTTP_AUTHORIZATION'] = authorization
         if header_id:
             headers['HTTP_X_RAZORPAY_EVENT_ID'] = header_id
         return APIClient().post('/api/v1/payments/webhooks/razorpay/', data=raw,
                                 content_type='application/json', **headers)
+
+    @override_settings(RAZORPAY_WEBHOOK_SECRET='test-webhook-secret')
+    def test_mismatched_or_missing_payment_facts_never_activate_membership(self):
+        for index, (amount, currency) in enumerate([(1, 'INR'), (100, 'USD'), (None, 'INR'), ('100', 'INR')]):
+            with self.subTest(amount=amount, currency=currency), self.assertLogs('payments.views', level='ERROR'):
+                self.assertEqual(self.webhook(event_id=f'mismatch-{index}', amount=amount, currency=currency).status_code, 500)
+        self.assertFalse(Membership.objects.exists())
+        self.payment.refresh_from_db()
+        self.assertEqual(self.payment.status, Payment.Status.CREATED)
+
+    @override_settings(RAZORPAY_WEBHOOK_SECRET='test-webhook-secret')
+    def test_provider_signature_is_independent_of_member_authorization(self):
+        self.assertEqual(self.webhook(authorization='Bearer expired-member-token').status_code, 200)
+
+    def test_paid_order_cannot_be_reused_with_another_payment_id(self):
+        activate_payment(order_id=self.payment.razorpay_order_id, payment_id='pay_test_123')
+        with self.assertRaises(ValueError):
+            activate_payment(order_id=self.payment.razorpay_order_id, payment_id='pay_another')
 
     @override_settings(RAZORPAY_WEBHOOK_SECRET='test-webhook-secret')
     def test_failed_activation_rolls_back_and_retry_succeeds_once(self):

@@ -9,6 +9,8 @@ from django.http import HttpResponseBadRequest
 from django.utils import timezone
 from rest_framework import serializers
 from rest_framework.decorators import api_view, permission_classes
+from rest_framework.decorators import authentication_classes
+from drf_spectacular.utils import extend_schema, inline_serializer, OpenApiTypes
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from memberships.models import Membership, MembershipPlan
@@ -18,8 +20,32 @@ from .services import activate_payment, verify_client_signature
 
 logger = logging.getLogger(__name__)
 
+class OrderInput(serializers.Serializer):
+    membership_plan_id = serializers.UUIDField()
+
+
+class VerificationInput(serializers.Serializer):
+    razorpay_order_id = serializers.CharField()
+    razorpay_payment_id = serializers.CharField()
+    razorpay_signature = serializers.CharField()
+
+
+order_response = inline_serializer('PaymentOrderResponse', fields={
+    'order_id': serializers.CharField(), 'amount': serializers.IntegerField(),
+    'currency': serializers.CharField(), 'key_id': serializers.CharField(),
+})
+verification_response = inline_serializer('PaymentVerificationResponse', fields={
+    'status': serializers.CharField(), 'membership_active': serializers.BooleanField(),
+    'payment_id': serializers.CharField(),
+})
+membership_response = inline_serializer('MembershipResponse', fields={
+    'status': serializers.CharField(), 'membership_active': serializers.BooleanField(),
+    'plan_slug': serializers.CharField(), 'ends_at': serializers.DateTimeField(required=False, allow_null=True),
+})
+
 def client(): return razorpay.Client(auth=(settings.RAZORPAY_KEY_ID, settings.RAZORPAY_KEY_SECRET))
 
+@extend_schema(request=OrderInput, responses=order_response)
 @api_view(['POST'])
 @permission_classes([IsAuthenticated, AdultMember])
 def create_order(request):
@@ -32,6 +58,7 @@ def create_order(request):
     logger.info('payment.order_created plan_id=%s order_id=%s payment_row_id=%s', plan.id, payment.razorpay_order_id, payment.id)
     return Response({'order_id': order['id'], 'amount': plan.price_paise, 'currency': 'INR', 'key_id': settings.RAZORPAY_KEY_ID})
 
+@extend_schema(request=VerificationInput, responses=verification_response)
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def verify_payment(request):
@@ -40,15 +67,21 @@ def verify_payment(request):
     try: payment = Payment.objects.get(razorpay_order_id=order_id, user=request.user)
     except Payment.DoesNotExist: return Response({'detail': 'Payment order not found.'}, status=404)
     # Client verification never activates membership: webhook remains authority.
-    return Response({'status': payment.status, 'membership_active': False, 'payment_id': payment_id})
+    membership = Membership.objects.filter(user=request.user, status=Membership.Status.ACTIVE,
+                                            ends_at__gt=timezone.now()).exists()
+    return Response({'status': payment.status, 'membership_active': membership, 'payment_id': payment_id})
 
+@extend_schema(request=OpenApiTypes.OBJECT, responses=OpenApiTypes.OBJECT, auth=[])
 @api_view(['POST'])
+@authentication_classes([])
 @permission_classes([AllowAny])
 def razorpay_webhook(request):
     if not settings.RAZORPAY_WEBHOOK_SECRET:
         return Response({'detail': 'Payment notifications are not configured.'}, status=503)
     raw, signature = request.body, request.headers.get('X-Razorpay-Signature', '')
     expected = hmac.new(settings.RAZORPAY_WEBHOOK_SECRET.encode(), raw, hashlib.sha256).hexdigest()
+    if len(signature) != 64 or not signature.isascii():
+        return HttpResponseBadRequest('Invalid webhook signature')
     if not signature or not hmac.compare_digest(expected, signature): return HttpResponseBadRequest('Invalid webhook signature')
     try:
         payload = json.loads(raw.decode())
@@ -76,6 +109,11 @@ def razorpay_webhook(request):
             # The outer row lock serializes concurrent deliveries of this event.
             with transaction.atomic():
                 if event_type in ('payment.captured', 'order.paid'):
+                    payment = Payment.objects.select_for_update().get(razorpay_order_id=order_id)
+                    if (type(entity.get('amount')) is not int or
+                            entity['amount'] != payment.amount_paise or
+                            entity.get('currency') != payment.currency):
+                        raise ValueError('Payment amount or currency does not match the order')
                     activate_payment(order_id=order_id, payment_id=payment_id)
                 elif event_type == 'payment.failed':
                     Payment.objects.filter(razorpay_order_id=order_id).exclude(
@@ -90,6 +128,7 @@ def razorpay_webhook(request):
             return Response({'detail': 'Webhook processing failed.'}, status=500)
     return Response({'ok': True})
 
+@extend_schema(responses=membership_response)
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def my_membership(request):

@@ -1,5 +1,5 @@
 import unittest
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 from django.test import SimpleTestCase, override_settings
 from config.db_router import DatabaseLoadBalancerRouter
 
@@ -8,6 +8,22 @@ class DatabaseLoadBalancerRouterTests(SimpleTestCase):
     def setUp(self):
         self.router = DatabaseLoadBalancerRouter()
         self.mock_model = MagicMock()
+
+    @override_settings(DATABASES={'default': {'ENGINE': 'django.db.backends.sqlite3'},
+                                 'replica': {'ENGINE': 'django.db.backends.sqlite3'}})
+    def test_security_and_payment_reads_use_primary_despite_replicas(self):
+        for label in ('auth', 'sessions', 'account_sessions', 'payments', 'memberships', 'safety'):
+            with self.subTest(label=label):
+                self.mock_model._meta.app_label = label
+                self.assertEqual(self.router.db_for_read(self.mock_model), 'default')
+
+    @override_settings(DATABASES={'default': {'ENGINE': 'django.db.backends.sqlite3'},
+                                 'replica': {'ENGINE': 'django.db.backends.sqlite3'}})
+    def test_reads_in_primary_transaction_stay_on_primary(self):
+        self.mock_model._meta.app_label = 'profiles'
+        with patch('config.db_router.connections') as connections:
+            connections['default'].in_atomic_block = True
+            self.assertEqual(self.router.db_for_read(self.mock_model), 'default')
 
     def test_writes_always_route_to_default(self):
         """Writes must strictly route to the primary/leader node."""

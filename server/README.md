@@ -33,8 +33,15 @@ The backend uses a two-tier database load balancing architecture:
    - Prevents connection starvation from concurrent Gunicorn and Celery workers, optimizing throughput.
 2. **Tier 2 - Django Primary/Replica Read-Write Split (`DatabaseLoadBalancerRouter`)**:
    - `db_for_write`: Routes all writes (`INSERT`, `UPDATE`, `DELETE`) and migrations strictly to the primary/leader node (`'default'`).
-   - `db_for_read`: Load-balances read queries (`SELECT`) across configured read replicas (`replica`, `replica_2`, etc.) via round-robin or random strategy. Falls back gracefully to `'default'` if no replica is configured.
+   - `db_for_read`: Load-balances eligible reads across configured replicas. Authentication, sessions, payments, memberships, safety, and reads inside a primary transaction always use the primary to avoid stale authorization or payment state. Uses the primary when no replica is configured. Replica outage detection and automatic failover are not implemented.
    - Configure read replicas via `DATABASE_READ_REPLICA_URL` or comma-separated `DATABASE_REPLICAS_URLS`.
+
+The Compose API and PgBouncer ports bind to localhost. Expose the API through a
+trusted HTTPS reverse proxy; remote clients cannot reach these host ports directly.
+PgBouncer requires SCRAM password authentication. PostgreSQL URL credentials are
+URL-decoded, and server-side cursors are disabled for transaction pooling.
+Production session and CSRF cookies require HTTPS. Configure and verify HTTPS
+redirects and HSTS at the reverse proxy before release.
 
 Run migrations,
 and register `https://mydearpartner.in/api/v1/payments/webhooks/razorpay/` in

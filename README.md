@@ -1,4 +1,17 @@
-This is a new [**React Native**](https://reactnative.dev) project, bootstrapped using [`@react-native-community/cli`](https://github.com/react-native-community/cli).
+# My Dear Partner
+
+React Native mobile app. Requires Node.js 22.11 or newer, npm, and the Android SDK/JDK for Android builds or Xcode/CocoaPods on macOS for iOS builds.
+
+Run `npm ci`, then `npm run check` to validate TypeScript, lint, tests and the local security mitigations. `npm start` starts Metro. The current development app connects to the production API; use dedicated test accounts and avoid destructive or payment tests against real member data.
+
+There are two supplementary backend services in this checkout:
+
+- `backend/`: Node/Express matching gateway. Run `npm ci` and `npm test` there; see [backend setup](backend/README.md).
+- `server/`: Django payments, memberships, safety and session modules. Requires Python 3.10 or newer; Python 3.12 was validated in the latest review. See [Django setup](server/README.md).
+
+Neither folder contains the complete production authentication/profile/chat backend or web frontend. Passing their local tests does not establish production readiness.
+
+See [the current health review and outstanding requirements](APP_HEALTH_CHECK_2026-10-22.md). Keep provider credentials and signing keys in local protected configuration, using the supplied `.env.example` files as templates.
 
 # Getting Started
 
