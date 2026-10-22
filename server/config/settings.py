@@ -75,5 +75,8 @@ RAZORPAY_KEY_SECRET = os.environ.get('RAZORPAY_KEY_SECRET', '')
 RAZORPAY_WEBHOOK_SECRET = os.environ.get('RAZORPAY_WEBHOOK_SECRET', '')
 CELERY_BROKER_URL = os.environ.get('REDIS_URL', 'redis://localhost:6379/0')
 CELERY_BEAT_SCHEDULE = {'expire-memberships-hourly': {'task': 'memberships.tasks.expire_memberships', 'schedule': 3600}}
+CELERY_BEAT_SCHEDULE['retry-session-notices'] = {
+    'task': 'account_sessions.tasks.retry_session_notices', 'schedule': 300,
+}
 
 SESSION_REPLACED_NOTIFY = os.environ.get('SESSION_REPLACED_NOTIFY', 'account_sessions.push.send_session_notice')

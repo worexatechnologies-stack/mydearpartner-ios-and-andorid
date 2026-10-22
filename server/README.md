@@ -41,7 +41,12 @@ trusted HTTPS reverse proxy; remote clients cannot reach these host ports direct
 PgBouncer requires SCRAM password authentication. PostgreSQL URL credentials are
 URL-decoded, and server-side cursors are disabled for transaction pooling.
 Production session and CSRF cookies require HTTPS. Configure and verify HTTPS
-redirects and HSTS at the reverse proxy before release.
+redirects at the reverse proxy before release. Django redirects HTTP to HTTPS in
+production and sets a one-hour HSTS policy, without subdomain/preload opt-in.
+If the proxy terminates TLS, enable `DJANGO_TRUST_PROXY_HTTPS=true` only after
+confirming it overwrites `X-Forwarded-Proto` and blocks direct upstream access.
+Celery beat schedules session-notice retries every five minutes in addition to
+membership expiry; run both the beat and worker services.
 
 Run migrations,
 and register `https://mydearpartner.in/api/v1/payments/webhooks/razorpay/` in
