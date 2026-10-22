@@ -21,6 +21,7 @@ import {
 } from 'react-native';
 import LinearGradient from 'react-native-linear-gradient';
 import Icon from 'react-native-vector-icons/Ionicons';
+import { ShieldCheck } from 'lucide-react-native';
 import AnimatedButton from '../../components/AnimatedButton';
 import AuthImage from '../../components/AuthImage';
 import EmptyState from '../../components/EmptyState';
@@ -337,6 +338,22 @@ function ConversationList({ navigation, onOpenChat, selectedId }: Props & {
           </ScrollView>
         </View>
       )}
+
+      {/* Safety & Privacy Notice */}
+      <View style={styles.safetyNoticeCard}>
+        <View style={styles.safetyHeaderRow}>
+          <View style={styles.safetyIconBadge}>
+            <ShieldCheck size={16} color="#B45309" strokeWidth={2.4} />
+          </View>
+          <Text style={styles.safetyTitle}>Safety & Privacy Notice</Text>
+        </View>
+        <Text style={styles.safetyDescription}>
+          My Dear Partner facilitates matchmaking introductions only. We are not responsible for any personal communications, off-platform meetings, financial transactions, or agreements between members.{' '}
+          <Text style={styles.safetyHighlight}>
+            Never transfer funds or share banking credentials.
+          </Text>
+        </Text>
+      </View>
 
       {/* Chat list */}
       <Text
@@ -833,5 +850,45 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     color: '#FFFFFF',
     letterSpacing: 0.2,
+  },
+  safetyNoticeCard: {
+    backgroundColor: '#FFFBEB',
+    marginHorizontal: spacing.lg,
+    marginBottom: spacing.md,
+    borderRadius: radii.md,
+    borderWidth: 1,
+    borderColor: '#FDE68A',
+    padding: spacing.md,
+    ...shadow.sm,
+  },
+  safetyHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 6,
+  },
+  safetyIconBadge: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    backgroundColor: '#FEF3C7',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 8,
+  },
+  safetyTitle: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#92400E',
+    letterSpacing: 0.2,
+  },
+  safetyDescription: {
+    fontSize: 12,
+    lineHeight: 17,
+    color: '#78350F',
+    fontWeight: '400',
+  },
+  safetyHighlight: {
+    fontWeight: '700',
+    color: '#92400E',
   },
 });

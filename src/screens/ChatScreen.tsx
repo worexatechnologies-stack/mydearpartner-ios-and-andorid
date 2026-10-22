@@ -31,6 +31,7 @@ useWindowDimensions,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Icon from 'react-native-vector-icons/Ionicons';
+import { ShieldCheck } from 'lucide-react-native';
 import LinearGradient from 'react-native-linear-gradient';
 import { blockService } from '../api/blockService';
 import { ReportTarget } from '../api/safetyService';
@@ -658,6 +659,22 @@ export default function ChatScreen({ route, navigation, embedded = false }: Prop
         </TouchableOpacity>
       )}
 
+      {/* Safety & Privacy Notice */}
+      <View style={[styles.chatSafetyBanner, isLarge && styles.largeConstrained]}>
+        <View style={styles.chatSafetyIconCircle}>
+          <ShieldCheck size={14} color="#FBBF24" strokeWidth={2.4} />
+        </View>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.chatSafetyTitle}>Safety & Privacy Notice</Text>
+          <Text style={styles.chatSafetyText}>
+            My Dear Partner facilitates matchmaking introductions only. We are not responsible for any personal communications, off-platform meetings, financial transactions, or agreements between members.{' '}
+            <Text style={styles.chatSafetyHighlight}>
+              Never transfer funds or share banking credentials.
+            </Text>
+          </Text>
+        </View>
+      </View>
+
       {/* Messages */}
       <View style={[styles.flex, isLarge && styles.largeConstrained]}>
         {loadingMessages && messages.length === 0 ? (
@@ -1209,5 +1226,43 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     color: '#FFF',
     marginRight: 2,
+  },
+  chatSafetyBanner: {
+    flexDirection: 'row',
+    backgroundColor: 'rgba(251, 191, 36, 0.08)',
+    borderWidth: 1,
+    borderColor: 'rgba(251, 191, 36, 0.22)',
+    borderRadius: 12,
+    marginHorizontal: 16,
+    marginTop: 6,
+    marginBottom: 6,
+    padding: 10,
+    alignItems: 'flex-start',
+  },
+  chatSafetyIconCircle: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: 'rgba(251, 191, 36, 0.16)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 9,
+    marginTop: 1,
+  },
+  chatSafetyTitle: {
+    fontSize: 11.5,
+    fontWeight: '800',
+    color: '#FBBF24',
+    marginBottom: 2,
+    letterSpacing: 0.2,
+  },
+  chatSafetyText: {
+    fontSize: 10.5,
+    lineHeight: 15,
+    color: 'rgba(255, 255, 255, 0.82)',
+  },
+  chatSafetyHighlight: {
+    fontWeight: '700',
+    color: '#FDE68A',
   },
 });
