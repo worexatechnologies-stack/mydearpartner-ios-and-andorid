@@ -23,7 +23,20 @@ cp .env.example .env
 docker compose up --build
 ```
 
-Before production, set a strong unique `DJANGO_SECRET_KEY` and real PostgreSQL/Redis/Razorpay values. Set `POSTGRES_PASSWORD` and use the same URL-encoded password in `DATABASE_URL`. Compose refuses to start without the database password, and Django refuses to start in production without a valid secret. Run migrations,
+Before production, set a strong unique `DJANGO_SECRET_KEY` and real PostgreSQL/Redis/Razorpay values. Set `POSTGRES_PASSWORD` and use the same URL-encoded password in `DATABASE_URL`. Compose refuses to start without the database password, and Django refuses to start in production without a valid secret.
+
+### Database Load Balancing Architecture
+The backend uses a two-tier database load balancing architecture:
+1. **Tier 1 - Connection Pooler & Load Balancer (`pgbouncer`)**:
+   - Manages connection lifecycle and multiplexes application traffic over port `6432`.
+   - Runs in transaction pooling mode (`POOL_MODE: transaction`) with connection limits and health checks (`pg_isready`).
+   - Prevents connection starvation from concurrent Gunicorn and Celery workers, optimizing throughput.
+2. **Tier 2 - Django Primary/Replica Read-Write Split (`DatabaseLoadBalancerRouter`)**:
+   - `db_for_write`: Routes all writes (`INSERT`, `UPDATE`, `DELETE`) and migrations strictly to the primary/leader node (`'default'`).
+   - `db_for_read`: Load-balances read queries (`SELECT`) across configured read replicas (`replica`, `replica_2`, etc.) via round-robin or random strategy. Falls back gracefully to `'default'` if no replica is configured.
+   - Configure read replicas via `DATABASE_READ_REPLICA_URL` or comma-separated `DATABASE_REPLICAS_URLS`.
+
+Run migrations,
 and register `https://mydearpartner.in/api/v1/payments/webhooks/razorpay/` in
 Razorpay for `payment.captured`, `payment.failed`, and `order.paid` events.
 The webhook secret must equal `RAZORPAY_WEBHOOK_SECRET`. Never expose either

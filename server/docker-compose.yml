@@ -3,22 +3,77 @@ services:
     build: .
     env_file: .env
     command: sh -c "python manage.py migrate && gunicorn config.wsgi:application --bind 0.0.0.0:8000"
-    depends_on: [db, redis]
+    depends_on:
+      pgbouncer:
+        condition: service_healthy
+      redis:
+        condition: service_started
     ports: ["8000:8000"]
+
   worker:
     build: .
     env_file: .env
     command: celery -A config worker -l INFO
-    depends_on: [db, redis]
+    depends_on:
+      pgbouncer:
+        condition: service_healthy
+      redis:
+        condition: service_started
+
   beat:
     build: .
     env_file: .env
     command: celery -A config beat -l INFO
-    depends_on: [db, redis]
+    depends_on:
+      pgbouncer:
+        condition: service_healthy
+      redis:
+        condition: service_started
+
+  # Database Load Balancer & Connection Pooler
+  pgbouncer:
+    image: edoburu/pgbouncer:v1.22.1
+    restart: unless-stopped
+    ports: ["6432:6432"]
+    environment:
+      DB_HOST: db
+      DB_PORT: 5432
+      DB_USER: mydearpartner
+      DB_PASSWORD: "${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in server/.env}"
+      DB_NAME: mydearpartner
+      POOL_MODE: transaction
+      MAX_CLIENT_CONN: 250
+      DEFAULT_POOL_SIZE: 25
+      MIN_POOL_SIZE: 5
+      RESERVE_POOL_SIZE: 5
+      AUTH_TYPE: any
+    healthcheck:
+      test: ["CMD", "pg_isready", "-h", "127.0.0.1", "-p", "6432"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    depends_on:
+      db:
+        condition: service_healthy
+
   db:
     image: postgres:16-alpine
-    environment: { POSTGRES_DB: mydearpartner, POSTGRES_USER: mydearpartner, POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in server/.env}" }
-    volumes: [postgres_data:/var/lib/postgresql/data]
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: mydearpartner
+      POSTGRES_USER: mydearpartner
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in server/.env}"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mydearpartner -d mydearpartner"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
   redis:
     image: redis:7-alpine
-volumes: { postgres_data: {} }
+    restart: unless-stopped
+
+volumes:
+  postgres_data: {}
