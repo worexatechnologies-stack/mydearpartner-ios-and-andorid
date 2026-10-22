@@ -10,6 +10,7 @@ import {
   TouchableOpacity,
   KeyboardAvoidingView,
   Platform,
+  useWindowDimensions,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
@@ -37,6 +38,8 @@ export default function SafetyCenter({
   target?: ReportTarget;
 }) {
   const insets = useSafeAreaInsets();
+  const { width } = useWindowDimensions();
+  const isTablet = width >= 600;
   const { logout } = useAuth();
   const [reason, setReason] = useState<string>(reportReasons[0]);
   const [details, setDetails] = useState('');
@@ -100,17 +103,19 @@ export default function SafetyCenter({
         >
           {/* Header */}
           <View style={[styles.header, { paddingTop: Math.max(insets.top, 20) + 16 }]}>
-            <TouchableOpacity onPress={close} style={styles.closeButton} disabled={busy}>
-              <Text style={{ fontSize: 24, color: tokens.colors.bgTop, fontWeight: '300' }}>✕</Text>
-            </TouchableOpacity>
-            <Text style={styles.headerTitle}>
-              {policy?.title ?? (page === 'delete' ? 'Delete Account' : 'Report a safety concern')}
-            </Text>
-            <View style={styles.closeButton} /> {/* Spacer */}
+            <View style={[styles.headerInner, isTablet && styles.constrained]}>
+              <TouchableOpacity onPress={close} style={styles.closeButton} disabled={busy}>
+                <Text style={{ fontSize: 24, color: tokens.colors.bgTop, fontWeight: '300' }}>✕</Text>
+              </TouchableOpacity>
+              <Text style={styles.headerTitle}>
+                {policy?.title ?? (page === 'delete' ? 'Delete Account' : 'Report a safety concern')}
+              </Text>
+              <View style={styles.closeButton} /> {/* Spacer */}
+            </View>
           </View>
 
           <ScrollView
-            contentContainerStyle={styles.content}
+            contentContainerStyle={[styles.content, isTablet && styles.constrained]}
             keyboardShouldPersistTaps="handled"
             showsVerticalScrollIndicator={false}
           >
@@ -231,14 +236,22 @@ export default function SafetyCenter({
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: '#F8FAFC' },
   header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
     paddingHorizontal: 20,
     paddingVertical: 16,
     backgroundColor: '#FFFFFF',
     borderBottomWidth: 1,
     borderBottomColor: '#E2E8F0',
+  },
+  headerInner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    width: '100%',
+  },
+  constrained: {
+    maxWidth: 640,
+    width: '100%',
+    alignSelf: 'center',
   },
   closeButton: { width: 40, height: 40, justifyContent: 'center', alignItems: 'flex-start' },
   headerTitle: { ...tokens.typography.tab, color: tokens.colors.bgTop, fontSize: 18 },

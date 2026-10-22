@@ -107,6 +107,9 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     borderWidth: 1,
     borderColor: 'rgba(99,102,241,0.4)',
+    maxWidth: 640,
+    width: '100%',
+    alignSelf: 'center',
   },
   row: {
     flexDirection: 'row',
