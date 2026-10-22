@@ -118,6 +118,9 @@ function GlassInput({ label, ...props }: TextInputProps & { label: string }) {
 export default function EditProfileScreen({ navigation }: Props) {
   const { currentUser, updateProfile, refreshCurrentUser } = useAuth();
   const insets = useSafeAreaInsets();
+  const { width } = useWindowDimensions();
+  const isTablet = width >= 600;
+  const isSmallDevice = width < 360;
   const profile = currentUser?.profile;
 
   const [originalForm] = useState(() => websiteProfileValues(profile));
@@ -399,7 +402,7 @@ export default function EditProfileScreen({ navigation }: Props) {
       />
 
       {/* ── Top Header ── */}
-      <View style={[styles.header, { paddingTop: Math.max(insets.top, 14) }]}>
+      <View style={[styles.header, isTablet && styles.constrained, { paddingTop: Math.max(insets.top, 14) }]}>
         <TouchableOpacity
           style={styles.headerBtn}
           onPress={() => navigation.goBack()}
@@ -421,7 +424,7 @@ export default function EditProfileScreen({ navigation }: Props) {
         style={styles.flex}
       >
         {/* ── Sticky Category Pill Tabs ── */}
-        <View style={styles.tabBarWrapper}>
+        <View style={[styles.tabBarWrapper, isTablet && styles.constrained]}>
           <ScrollView
             horizontal
             showsHorizontalScrollIndicator={false}
@@ -464,6 +467,8 @@ export default function EditProfileScreen({ navigation }: Props) {
           keyboardDismissMode="on-drag"
           contentContainerStyle={[
             styles.content,
+            isTablet && styles.constrained,
+            isSmallDevice && styles.contentSmall,
             { paddingBottom: insets.bottom + 130 },
           ]}
           showsVerticalScrollIndicator={false}
@@ -856,13 +861,15 @@ export default function EditProfileScreen({ navigation }: Props) {
 
       {/* ── Sticky Bottom Save Bar ── */}
       <View style={[styles.floatingSaveContainer, { paddingBottom: Math.max(insets.bottom, 14) }]}>
-        <AppButton
-          title="Save Profile"
-          onPress={onSave}
-          loading={loading}
-          disabled={loading || uploadingPhotoIndex !== null || deletingPhoto}
-          style={styles.saveBtn}
-        />
+        <View style={[styles.saveBtnWrapper, isTablet && styles.constrained]}>
+          <AppButton
+            title="Save Profile"
+            onPress={onSave}
+            loading={loading}
+            disabled={loading || uploadingPhotoIndex !== null || deletingPhoto}
+            style={styles.saveBtn}
+          />
+        </View>
       </View>
     </View>
   );
@@ -1428,5 +1435,16 @@ const styles = StyleSheet.create({
   },
   saveBtn: {
     ...shadow.button,
+  },
+  saveBtnWrapper: {
+    width: '100%',
+  },
+  constrained: {
+    maxWidth: 680,
+    width: '100%',
+    alignSelf: 'center',
+  },
+  contentSmall: {
+    paddingHorizontal: 12,
   },
 });

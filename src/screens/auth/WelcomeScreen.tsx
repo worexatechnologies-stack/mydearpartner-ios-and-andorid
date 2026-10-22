@@ -23,6 +23,8 @@ export default function WelcomeScreen() {
   const { width } = useWindowDimensions();
   const insets = useSafeAreaInsets();
 
+  const wavyWidth = Math.min(width, 560);
+
   return (
     <View style={styles.screen}>
       <StatusBar barStyle="dark-content" />
@@ -30,13 +32,13 @@ export default function WelcomeScreen() {
       {/* Top Wavy Background - positioned at top right */}
       <Image 
         source={require('../../assets/images/welcome_bg_wavy.jpg')}
-        style={[styles.topWavyBg, { width: width, height: width * 1.2 }]}
+        style={[styles.topWavyBg, { width: wavyWidth, height: wavyWidth * 1.2 }]}
         resizeMode="cover"
       />
       {/* Fade the bottom of the wavy bg into the solid screen background */}
       <LinearGradient
         colors={['rgba(255, 242, 246, 0)', '#FFF2F6']}
-        style={[StyleSheet.absoluteFill, { top: width * 0.8, height: width * 0.4 }]}
+        style={[StyleSheet.absoluteFill, { top: wavyWidth * 0.8, height: wavyWidth * 0.4 }]}
       />
 
       <ScrollView
@@ -100,7 +102,7 @@ export default function WelcomeScreen() {
 
         {/* Seamless Blended Image Container */}
         <View style={styles.heroWrapper}>
-          <View style={[styles.heroImageContainer, { height: width * 0.95 }]}>
+          <View style={[styles.heroImageContainer, { height: Math.min(width * 0.95, 380) }]}>
             <Image
               source={require('../../assets/images/welcome_marriage.jpg')}
               style={styles.heroImage}
@@ -191,6 +193,9 @@ const styles = StyleSheet.create({
   content: {
     flexGrow: 1,
     paddingHorizontal: spacing.lg,
+    maxWidth: 540,
+    width: '100%',
+    alignSelf: 'center',
   },
   header: {
     flexDirection: 'row',

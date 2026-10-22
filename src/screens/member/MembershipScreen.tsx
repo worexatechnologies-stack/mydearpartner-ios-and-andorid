@@ -9,6 +9,7 @@ import {
   Text,
   TouchableOpacity,
   View,
+  useWindowDimensions,
 } from 'react-native';
 import LinearGradient from 'react-native-linear-gradient';
 import RazorpayCheckout from 'react-native-razorpay';
@@ -428,6 +429,9 @@ function PlanCard({
 export default function MembershipScreen({ navigation }: Props) {
   const { currentUser, refreshCurrentUser } = useAuth();
   const insets = useSafeAreaInsets();
+  const { width } = useWindowDimensions();
+  const isTablet = width >= 600;
+  const isSmallDevice = width < 360;
   const allowance = usePlanAllowance();
   const { refreshUsage, markDailyInterestsExhausted } = allowance;
   const activePlanSlug = allowance.planSlug;
@@ -797,7 +801,7 @@ export default function MembershipScreen({ navigation }: Props) {
       <View style={[StyleSheet.absoluteFill, { backgroundColor: '#FAF8F7' }]} />
 
       {/* Top Navigation Bar */}
-      <View style={[styles.header, { paddingTop: insets.top + 8 }]}>
+      <View style={[styles.header, isTablet && styles.constrained, { paddingTop: insets.top + 8 }]}>
         <TouchableOpacity
           onPress={() => {
             triggerHaptic('light');
@@ -811,8 +815,8 @@ export default function MembershipScreen({ navigation }: Props) {
         </TouchableOpacity>
 
         <View style={styles.headerCenter}>
-          <Text style={styles.headerTitle}>Membership Plans</Text>
-          <Text style={styles.headerSubtitle}>
+          <Text style={[styles.headerTitle, isSmallDevice && { fontSize: 18 }]}>Membership Plans</Text>
+          <Text style={[styles.headerSubtitle, isSmallDevice && { fontSize: 11 }]}>
             Unlock contacts, unlimited chats & top visibility
           </Text>
         </View>
@@ -825,6 +829,8 @@ export default function MembershipScreen({ navigation }: Props) {
         style={{ flex: 1 }}
         contentContainerStyle={[
           styles.scrollContent,
+          isTablet && styles.constrained,
+          isSmallDevice && styles.scrollContentSmall,
           { paddingBottom: insets.bottom + 170 },
         ]}
         showsVerticalScrollIndicator={false}
@@ -888,53 +894,55 @@ export default function MembershipScreen({ navigation }: Props) {
           { paddingBottom: Math.max(insets.bottom + 8, 18) },
         ]}
       >
-        <TouchableOpacity
-          style={[
-            styles.ctaButton,
-            isProcessing && { opacity: 0.7 },
-          ]}
-          onPress={() => handlePayment(selectedPlan)}
-          disabled={isProcessing}
-          activeOpacity={0.9}
-        >
-          <LinearGradient
-            colors={
-              isSelectedCurrent
-                ? ['#475569', '#334155']
-                : [colors.action, colors.primary]
-            }
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 0 }}
-            style={styles.ctaButtonGradient}
+        <View style={[styles.bottomBarContent, isTablet && styles.constrained]}>
+          <TouchableOpacity
+            style={[
+              styles.ctaButton,
+              isProcessing && { opacity: 0.7 },
+            ]}
+            onPress={() => handlePayment(selectedPlan)}
+            disabled={isProcessing}
+            activeOpacity={0.9}
           >
-            {isProcessing ? (
-              <BufferingIndicator size="small" color="#FFFFFF" />
-            ) : (
-              <>
-                <Text style={styles.ctaButtonText}>
-                  {isSelectedCurrent
-                    ? `Current Active Plan (${selectedPlan.name})`
-                    : `Continue with ${selectedPlan.name} · ${bottomDisplayPrice}`}
-                </Text>
+            <LinearGradient
+              colors={
+                isSelectedCurrent
+                  ? ['#475569', '#334155']
+                  : [colors.action, colors.primary]
+              }
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 0 }}
+              style={styles.ctaButtonGradient}
+            >
+              {isProcessing ? (
+                <BufferingIndicator size="small" color="#FFFFFF" />
+              ) : (
+                <>
+                  <Text style={[styles.ctaButtonText, isSmallDevice && { fontSize: 13.5 }]}>
+                    {isSelectedCurrent
+                      ? `Current Active Plan (${selectedPlan.name})`
+                      : `Continue with ${selectedPlan.name} · ${bottomDisplayPrice}`}
+                  </Text>
 
-                <View style={styles.ctaArrowCircle}>
-                  <Icon
-                    name="arrow-forward"
-                    size={16}
-                    color={isSelectedCurrent ? '#475569' : colors.action}
-                  />
-                </View>
-              </>
-            )}
-          </LinearGradient>
-        </TouchableOpacity>
+                  <View style={styles.ctaArrowCircle}>
+                    <Icon
+                      name="arrow-forward"
+                      size={16}
+                      color={isSelectedCurrent ? '#475569' : colors.action}
+                    />
+                  </View>
+                </>
+              )}
+            </LinearGradient>
+          </TouchableOpacity>
 
-        {/* Security & Guarantee microcopy */}
-        <View style={styles.securityRow}>
-          <Icon name="lock-closed" size={12} color="#10B981" />
-          <Text style={styles.securityText}>
-            256-Bit SSL Encrypted  •  Instant Activation  •  Cancel Anytime
-          </Text>
+          {/* Security & Guarantee microcopy */}
+          <View style={styles.securityRow}>
+            <Icon name="lock-closed" size={12} color="#10B981" />
+            <Text style={styles.securityText}>
+              256-Bit SSL Encrypted  •  Instant Activation  •  Cancel Anytime
+            </Text>
+          </View>
         </View>
       </View>
     </View>
@@ -1406,5 +1414,16 @@ const styles = StyleSheet.create({
     fontSize: 11.5,
     color: '#706574',
     fontWeight: '600',
+  },
+  constrained: {
+    maxWidth: 680,
+    width: '100%',
+    alignSelf: 'center',
+  },
+  scrollContentSmall: {
+    paddingHorizontal: 12,
+  },
+  bottomBarContent: {
+    width: '100%',
   },
 });

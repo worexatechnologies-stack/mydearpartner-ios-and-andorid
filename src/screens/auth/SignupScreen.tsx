@@ -492,7 +492,16 @@ const styles = StyleSheet.create({
   
   // Custom Dark Select Modal Styles
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'flex-end' },
-  modalContent: { backgroundColor: '#1A1118', borderTopLeftRadius: radii.xl, borderTopRightRadius: radii.xl, maxHeight: '70%', padding: spacing.lg },
+  modalContent: {
+    backgroundColor: '#1A1118',
+    borderTopLeftRadius: radii.xl,
+    borderTopRightRadius: radii.xl,
+    maxHeight: '70%',
+    padding: spacing.lg,
+    maxWidth: 500,
+    width: '100%',
+    alignSelf: 'center',
+  },
   modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: spacing.md },
   modalTitle: { ...typeScale.title, fontSize: 20, color: '#FFF' },
   closeBtn: { padding: spacing.xs, marginRight: -spacing.xs },

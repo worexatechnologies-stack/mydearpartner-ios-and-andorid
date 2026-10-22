@@ -559,7 +559,7 @@ export default function ChatScreen({ route, navigation, embedded = false }: Prop
       </View>
 
       {/* Header */}
-      <View style={[styles.header, { paddingTop: Math.max(insets.top, 20) }]}>
+      <View style={[styles.header, isLarge && styles.largeConstrained, { paddingTop: Math.max(insets.top, 20) }]}>
         <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()} activeOpacity={0.8}>
           <Icon name="chevron-back" size={24} color="#FFF" />
         </TouchableOpacity>
@@ -634,20 +634,20 @@ export default function ChatScreen({ route, navigation, embedded = false }: Prop
       <SafetyCenter page={reportTarget ? 'report' : null} target={reportTarget ?? undefined} onClose={() => setReportTarget(null)} />
       
       {iBlocked && (
-        <TouchableOpacity style={styles.blockedBanner} onPress={handleBlockToggle} activeOpacity={0.85}>
+        <TouchableOpacity style={[styles.blockedBanner, isLarge && styles.largeConstrained]} onPress={handleBlockToggle} activeOpacity={0.85}>
           <Icon name="ban" size={16} color="#EF4444" style={{ marginRight: 8 }} />
           <Text style={styles.blockedBannerText}>You blocked <Text style={{ fontWeight: '800' }}>{displayName}</Text>. Tap to unblock.</Text>
         </TouchableOpacity>
       )}
       {!iBlocked && blockedByThem && (
-        <View style={styles.blockedByBanner}>
+        <View style={[styles.blockedByBanner, isLarge && styles.largeConstrained]}>
           <Icon name="shield-outline" size={16} color="#7C3AED" style={{ marginRight: 8 }} />
           <Text style={styles.blockedByBannerText}>You can't reply to this conversation.</Text>
         </View>
       )}
       {!iBlocked && !blockedByThem && !connectionClosed && !isPremium && (
         <TouchableOpacity
-          style={styles.premiumBanner}
+          style={[styles.premiumBanner, isLarge && styles.largeConstrained]}
           onPress={() => navigation.navigate('Membership')}
           activeOpacity={0.85}
         >
@@ -821,112 +821,120 @@ export default function ChatScreen({ route, navigation, embedded = false }: Prop
 
         {!isPremium ? (
           <View style={[styles.lockedInputBar, { paddingBottom: Math.max(insets.bottom, 14) }]}>
-            <TouchableOpacity
-              style={styles.lockedUpgradeCard}
-              onPress={() => {
-                triggerHaptic('light');
-                navigation.navigate('Membership');
-              }}
-              activeOpacity={0.88}
-              accessibilityRole="button"
-              accessibilityLabel="Upgrade to Gold to unlock chat"
-            >
-              <View style={styles.lockedUpgradeInner}>
-                <View style={styles.lockedIconCircle}>
-                  <Icon name="lock-closed" size={18} color="#FFFFFF" />
-                </View>
-
-                <View style={styles.lockedTextWrap}>
-                  <View style={styles.lockedHeaderRow}>
-                    <Text style={styles.lockedTitle}>Chats locked</Text>
-                    <View style={styles.lockedBadge}>
-                      <Text style={styles.lockedBadgeText}>FREE ACCOUNT</Text>
-                    </View>
+            <View style={[styles.barInner, isLarge && styles.largeConstrained]}>
+              <TouchableOpacity
+                style={styles.lockedUpgradeCard}
+                onPress={() => {
+                  triggerHaptic('light');
+                  navigation.navigate('Membership');
+                }}
+                activeOpacity={0.88}
+                accessibilityRole="button"
+                accessibilityLabel="Upgrade to Gold to unlock chat"
+              >
+                <View style={styles.lockedUpgradeInner}>
+                  <View style={styles.lockedIconCircle}>
+                    <Icon name="lock-closed" size={18} color="#FFFFFF" />
                   </View>
-                  <Text style={styles.lockedSubtitle} numberOfLines={2}>
-                    Upgrade to Gold or Elite to chat with {displayName.split(' ')[0]}.
-                  </Text>
-                </View>
 
-                <View style={styles.lockedCtaPill}>
-                  <Text style={styles.lockedCtaText}>Upgrade</Text>
-                  <Icon name="chevron-forward" size={13} color="#FFF" />
+                  <View style={styles.lockedTextWrap}>
+                    <View style={styles.lockedHeaderRow}>
+                      <Text style={styles.lockedTitle}>Chats locked</Text>
+                      <View style={styles.lockedBadge}>
+                        <Text style={styles.lockedBadgeText}>FREE ACCOUNT</Text>
+                      </View>
+                    </View>
+                    <Text style={styles.lockedSubtitle} numberOfLines={2}>
+                      Upgrade to Gold or Elite to chat with {displayName.split(' ')[0]}.
+                    </Text>
+                  </View>
+
+                  <View style={styles.lockedCtaPill}>
+                    <Text style={styles.lockedCtaText}>Upgrade</Text>
+                    <Icon name="chevron-forward" size={13} color="#FFF" />
+                  </View>
                 </View>
-              </View>
-            </TouchableOpacity>
+              </TouchableOpacity>
+            </View>
           </View>
         ) : chatDisabled ? (
           <View style={[styles.blockedInputBar, { paddingBottom: Math.max(insets.bottom, 12) }]}>
-            <Icon name="lock-closed-outline" size={18} color="#FF5C97" style={{ marginRight: 8 }} />
-            <Text style={styles.blockedInputText}>
-              {connectionClosed ? 'This connection has ended. Messaging is unavailable.' : iBlocked ? `You blocked ${displayName}. Unblock to send messages.` : 'You cannot send messages in this conversation.'}
-            </Text>
+            <View style={[styles.barInnerRow, isLarge && styles.largeConstrained]}>
+              <Icon name="lock-closed-outline" size={18} color="#FF5C97" style={{ marginRight: 8 }} />
+              <Text style={styles.blockedInputText}>
+                {connectionClosed ? 'This connection has ended. Messaging is unavailable.' : iBlocked ? `You blocked ${displayName}. Unblock to send messages.` : 'You cannot send messages in this conversation.'}
+              </Text>
+            </View>
           </View>
         ) : (
           <View style={[styles.inputBar, { paddingBottom: keyboardVisible ? 8 : Math.max(insets.bottom, 8) }]}>
-            {!text.trim() && (
-              <QuickReplyBar
-                onSelectPrompt={prompt => {
-                  setText(prompt);
-                }}
-                partnerName={otherProfile?.name}
-                isNewConversation={messages.length <= 4}
-              />
-            )}
-            <View style={styles.inputRow}>
-              <TouchableOpacity style={styles.emojiBtn} onPress={() => toggleComposerPanel('emoji')}>
-                <Icon name={composerPanel === 'emoji' ? 'keyboard-outline' : 'happy-outline'} size={24} color={composerPanel === 'emoji' ? '#FF5C97' : '#94A3B8'} />
-              </TouchableOpacity>
-              <TextInput
-                style={styles.input}
-                accessibilityLabel="Message"
-                placeholder="Type a message..."
-                placeholderTextColor="#94A3B8"
-                value={text}
-                onChangeText={handleTextChange}
-                onFocus={() => setComposerPanel(null)}
-                multiline
-                maxLength={500}
-                keyboardAppearance="dark"
-              />
-              <AnimatedButton
-                accessibilityRole="button"
-                accessibilityLabel="Send message"
-                activeScale={0.88}
-                style={[styles.sendBtn, (!text.trim() || sending) && styles.sendBtnDisabled]}
-                onPress={onSend}
-                disabled={!text.trim() || sending}
-              >
-                <LinearGradient colors={text.trim() ? ['#FF5C97', '#FF2D78'] : ['#351829', '#351829']} style={styles.sendBtnGradient}>
-                  <Icon name="send" size={18} color={text.trim() ? '#FFF' : '#64748B'} />
-                </LinearGradient>
-              </AnimatedButton>
+            <View style={[styles.barInner, isLarge && styles.largeConstrained]}>
+              {!text.trim() && (
+                <QuickReplyBar
+                  onSelectPrompt={prompt => {
+                    setText(prompt);
+                  }}
+                  partnerName={otherProfile?.name}
+                  isNewConversation={messages.length <= 4}
+                />
+              )}
+              <View style={styles.inputRow}>
+                <TouchableOpacity style={styles.emojiBtn} onPress={() => toggleComposerPanel('emoji')}>
+                  <Icon name={composerPanel === 'emoji' ? 'keyboard-outline' : 'happy-outline'} size={24} color={composerPanel === 'emoji' ? '#FF5C97' : '#94A3B8'} />
+                </TouchableOpacity>
+                <TextInput
+                  style={styles.input}
+                  accessibilityLabel="Message"
+                  placeholder="Type a message..."
+                  placeholderTextColor="#94A3B8"
+                  value={text}
+                  onChangeText={handleTextChange}
+                  onFocus={() => setComposerPanel(null)}
+                  multiline
+                  maxLength={500}
+                  keyboardAppearance="dark"
+                />
+                <AnimatedButton
+                  accessibilityRole="button"
+                  accessibilityLabel="Send message"
+                  activeScale={0.88}
+                  style={[styles.sendBtn, (!text.trim() || sending) && styles.sendBtnDisabled]}
+                  onPress={onSend}
+                  disabled={!text.trim() || sending}
+                >
+                  <LinearGradient colors={text.trim() ? ['#FF5C97', '#FF2D78'] : ['#351829', '#351829']} style={styles.sendBtnGradient}>
+                    <Icon name="send" size={18} color={text.trim() ? '#FFF' : '#64748B'} />
+                  </LinearGradient>
+                </AnimatedButton>
+              </View>
             </View>
           </View>
         )}
         
         {composerPanel === 'emoji' && (
           <View style={[styles.composerDrawer, { paddingBottom: Math.max(insets.bottom, 12), maxHeight: Math.min(310, height * 0.45) }]}>
-            <View style={styles.drawerHeader}>
-              <Text style={styles.drawerTitle}>Emojis</Text>
-              <TouchableOpacity onPress={() => setComposerPanel(null)} style={styles.drawerCloseBtn}>
-                <Icon name="close" size={18} color="#94A3B8" />
-              </TouchableOpacity>
+            <View style={[styles.barInner, isLarge && styles.largeConstrained]}>
+              <View style={styles.drawerHeader}>
+                <Text style={styles.drawerTitle}>Emojis</Text>
+                <TouchableOpacity onPress={() => setComposerPanel(null)} style={styles.drawerCloseBtn}>
+                  <Icon name="close" size={18} color="#94A3B8" />
+                </TouchableOpacity>
+              </View>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.emojiCategoryTabs}>
+                {EMOJI_CATEGORIES.map(category => (
+                  <TouchableOpacity key={category.id} style={[styles.emojiCategoryTab, category.id === emojiCategoryId && styles.emojiCategoryTabSelected]} onPress={() => setEmojiCategoryId(category.id)}>
+                    <Text style={[styles.emojiCategoryTabText, category.id === emojiCategoryId && { color: '#FF2D78' }]}>{category.label}</Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+              <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={styles.emojiGrid}>
+                {(EMOJI_CATEGORIES.find(c => c.id === emojiCategoryId) ?? EMOJI_CATEGORIES[0]).emojis.map(emoji => (
+                  <TouchableOpacity key={emoji} style={styles.emojiItem} onPress={() => appendEmoji(emoji)}>
+                    <Text style={styles.emojiChar}>{emoji}</Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
             </View>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.emojiCategoryTabs}>
-              {EMOJI_CATEGORIES.map(category => (
-                <TouchableOpacity key={category.id} style={[styles.emojiCategoryTab, category.id === emojiCategoryId && styles.emojiCategoryTabSelected]} onPress={() => setEmojiCategoryId(category.id)}>
-                  <Text style={[styles.emojiCategoryTabText, category.id === emojiCategoryId && { color: '#FF2D78' }]}>{category.label}</Text>
-                </TouchableOpacity>
-              ))}
-            </ScrollView>
-            <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={styles.emojiGrid}>
-              {(EMOJI_CATEGORIES.find(c => c.id === emojiCategoryId) ?? EMOJI_CATEGORIES[0]).emojis.map(emoji => (
-                <TouchableOpacity key={emoji} style={styles.emojiItem} onPress={() => appendEmoji(emoji)}>
-                  <Text style={styles.emojiChar}>{emoji}</Text>
-                </TouchableOpacity>
-              ))}
-            </ScrollView>
           </View>
         )}
       </View>
@@ -945,6 +953,8 @@ const styles = StyleSheet.create({
   messageRetry: { minHeight: 44, justifyContent: 'center', paddingVertical: 8 },
   messageRetryText: { color: '#FFF', fontWeight: '700', textDecorationLine: 'underline' },
   largeConstrained: { maxWidth: 680, width: '100%', alignSelf: 'center' },
+  barInner: { width: '100%' },
+  barInnerRow: { width: '100%', flexDirection: 'row', alignItems: 'center' },
   ringsContainer: {
     ...(StyleSheet.absoluteFill as any),
     alignItems: 'center',

@@ -101,7 +101,8 @@ export default function MainTabNavigator() {
   const insets = useSafeAreaInsets();
   const isSmallScreen = width < 360;
   const availableWidth = width - insets.left - insets.right;
-  const barWidth = Math.min(560, Math.max(0, availableWidth - 32));
+  const horizontalMargin = isSmallScreen ? 16 : 32;
+  const barWidth = Math.min(560, Math.max(0, availableWidth - horizontalMargin));
   const barLeft = insets.left + (availableWidth - barWidth) / 2;
   const tabBarHeight = 72 + Math.max(0, fontScale - 1) * 14;
 
@@ -126,10 +127,8 @@ export default function MainTabNavigator() {
               height: tabBarHeight,
               bottom: Math.max(insets.bottom, FLOATING_TAB_BAR_BOTTOM),
               left: barLeft,
-              start: barLeft,
-              end: insets.right + (availableWidth - barWidth) / 2,
               width: barWidth,
-              paddingHorizontal: 4,
+              paddingHorizontal: isSmallScreen ? 2 : 4,
               paddingBottom: 0,
             },
           ],
