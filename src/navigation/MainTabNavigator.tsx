@@ -100,9 +100,10 @@ export default function MainTabNavigator() {
   const { width, fontScale } = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const isSmallScreen = width < 360;
+  const isTablet = width >= 600;
   const availableWidth = width - insets.left - insets.right;
-  const horizontalMargin = isSmallScreen ? 16 : 32;
-  const barWidth = Math.min(560, Math.max(0, availableWidth - horizontalMargin));
+  const horizontalMargin = isSmallScreen ? 20 : 32;
+  const barWidth = isTablet ? 560 : Math.min(560, Math.max(0, availableWidth - horizontalMargin));
   const barLeft = insets.left + (availableWidth - barWidth) / 2;
   const tabBarHeight = 72 + Math.max(0, fontScale - 1) * 14;
 
@@ -127,6 +128,9 @@ export default function MainTabNavigator() {
               height: tabBarHeight,
               bottom: Math.max(insets.bottom, FLOATING_TAB_BAR_BOTTOM),
               left: barLeft,
+              right: barLeft,
+              start: barLeft,
+              end: barLeft,
               width: barWidth,
               paddingHorizontal: isSmallScreen ? 2 : 4,
               paddingBottom: 0,
@@ -184,7 +188,6 @@ export default function MainTabNavigator() {
 const styles = StyleSheet.create({
   tabBar: {
     position: 'absolute',
-    left: 16,
     backgroundColor: '#FFFFFF',
     borderRadius: 22,
     borderWidth: 1,
