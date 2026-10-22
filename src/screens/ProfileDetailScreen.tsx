@@ -208,9 +208,21 @@ export default function ProfileDetailScreen({ route, navigation }: Props) {
   const onToggleInterest = async () => {
     if (isSending) return;
 
-    // 1. If already mutually matched, open chat
-    if (rel.isMutual) {
-      await onMessage();
+    // Connected opens relationship actions; messaging remains a separate action.
+    if (rel.isMutual && rel.activeInterest) {
+      Alert.alert('Connected', `You are connected with ${profile.name}.`, [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Unconnect', style: 'destructive', onPress: async () => {
+          setIsSending(true);
+          try {
+            await cancelInterest(rel.activeInterest!.id);
+          } catch (error: any) {
+            Alert.alert('Could not unconnect', error?.message ?? 'Please try again.');
+          } finally {
+            setIsSending(false);
+          }
+        } },
+      ]);
       return;
     }
 
@@ -787,23 +799,31 @@ export default function ProfileDetailScreen({ route, navigation }: Props) {
               <Icon name="list" size={20} color={colors.primary} />
               <Text style={styles.cardHeaderTitle}>Basic Details</Text>
             </View>
-            <View style={styles.detailsGrid}>
+            <View style={[styles.detailsGrid, compactLayout && styles.detailsGridCompact]}>
               <DetailItem
                 icon="briefcase"
                 label="Profession"
                 value={profile.profession}
+                compact={compactLayout}
               />
               <DetailItem
                 icon="business"
                 label="Company"
                 value={profile.company}
+                compact={compactLayout}
               />
               <DetailItem
                 icon="school"
                 label="Education"
                 value={profile.education}
+                compact={compactLayout}
               />
-              <DetailItem icon="cash" label="Income" value={profile.income} />
+              <DetailItem
+                icon="cash"
+                label="Income"
+                value={profile.income}
+                compact={compactLayout}
+              />
             </View>
           </View>
 
@@ -814,26 +834,30 @@ export default function ProfileDetailScreen({ route, navigation }: Props) {
                 <Icon name="leaf" size={20} color={colors.primary} />
                 <Text style={styles.cardHeaderTitle}>Lifestyle & Values</Text>
               </View>
-              <View style={styles.detailsGrid}>
+              <View style={[styles.detailsGrid, compactLayout && styles.detailsGridCompact]}>
                 <DetailItem
                   icon="restaurant"
                   label="Diet"
                   value={profile.lifestyle.diet}
+                  compact={compactLayout}
                 />
                 <DetailItem
                   icon="flame"
                   label="Smoking"
                   value={profile.lifestyle.smoking}
+                  compact={compactLayout}
                 />
                 <DetailItem
                   icon="wine"
                   label="Drinking"
                   value={profile.lifestyle.drinking}
+                  compact={compactLayout}
                 />
                 <DetailItem
                   icon="home"
                   label="Living Arrangement"
                   value={profile.lifestyle.livingArrangement}
+                  compact={compactLayout}
                 />
               </View>
             </View>
@@ -846,26 +870,30 @@ export default function ProfileDetailScreen({ route, navigation }: Props) {
                 <Icon name="home" size={20} color={colors.primary} />
                 <Text style={styles.cardHeaderTitle}>Family Details</Text>
               </View>
-              <View style={styles.detailsGrid}>
+              <View style={[styles.detailsGrid, compactLayout && styles.detailsGridCompact]}>
                 <DetailItem
                   icon="man"
                   label="Father"
                   value={profile.fatherStatus || (isSelf ? 'Not provided' : undefined)}
+                  compact={compactLayout}
                 />
                 <DetailItem
                   icon="woman"
                   label="Mother"
                   value={profile.motherStatus || (isSelf ? 'Not provided' : undefined)}
+                  compact={compactLayout}
                 />
                 <DetailItem
                   icon="people"
                   label="Family Type"
                   value={profile.familyType || (isSelf ? 'Not provided' : undefined)}
+                  compact={compactLayout}
                 />
                 <DetailItem
                   icon="location"
                   label="Location"
                   value={profile.familyLocation || (isSelf ? 'Not provided' : undefined)}
+                  compact={compactLayout}
                 />
               </View>
             </View>
@@ -890,26 +918,30 @@ export default function ProfileDetailScreen({ route, navigation }: Props) {
                 </Text>
               </TouchableOpacity>
             </View>
-            <View style={styles.detailsGrid}>
+            <View style={[styles.detailsGrid, compactLayout && styles.detailsGridCompact]}>
               <DetailItem
                 icon="star"
                 label="Nakshatra / Star"
                 value={profile.starNakshatra || 'Available on request'}
+                compact={compactLayout}
               />
               <DetailItem
                 icon="flame"
                 label="Manglik Status"
                 value={profile.manglikStatus || 'Not provided'}
+                compact={compactLayout}
               />
               <DetailItem
                 icon="compass"
                 label="Gothra"
                 value={profile.gothra || 'Available on request'}
+                compact={compactLayout}
               />
               <DetailItem
                 icon="moon"
                 label="Horoscope"
                 value={profile.horoscope || 'Available on mutual connect'}
+                compact={compactLayout}
               />
             </View>
 
@@ -967,35 +999,7 @@ export default function ProfileDetailScreen({ route, navigation }: Props) {
             </LinearGradient>
           </TouchableOpacity>
 
-          {/* Contact Details (Visible for Self Preview or Accepted Match) */}
-          {(isSelf || existingInterest?.status === 'accepted') && (
-            <View style={[styles.infoCard, { marginBottom: 36 }]}>
-              <View style={styles.cardHeaderRow}>
-                <Icon name="call" size={20} color={colors.primary} />
-                <Text style={styles.cardHeaderTitle}>Contact & Account Details</Text>
-              </View>
-              <View style={styles.detailsGrid}>
-                <DetailItem
-                  icon="mail-outline"
-                  label="Email / Gmail"
-                  value={
-                    (isSelf ? (currentUser?.email || profile.email) : profile.email) ||
-                    (isSelf ? 'Not provided' : 'Available on connect')
-                  }
-                />
-                <DetailItem
-                  icon="call-outline"
-                  label="Mobile Number"
-                  value={
-                    (isSelf
-                      ? (profile.mobileNumber || (currentUser as any)?.mobileNumber)
-                      : profile.mobileNumber) ||
-                    (isSelf ? 'Not verified' : 'Available on connect')
-                  }
-                />
-              </View>
-            </View>
-          )}
+
         </View>
       </ScrollView>
 
@@ -1061,7 +1065,7 @@ export default function ProfileDetailScreen({ route, navigation }: Props) {
             <Icon
               name={
                 rel.isMutual
-                  ? 'chatbubble-ellipses'
+                  ? 'checkmark-circle'
                   : rel.status === 'received'
                     ? 'checkmark-circle'
                     : rel.status === 'sent'
@@ -1079,17 +1083,19 @@ export default function ProfileDetailScreen({ route, navigation }: Props) {
               ]}
             >
               {isSending
-                ? rel.status === 'sent'
-                  ? 'Unsending…'
+                ? rel.isMutual
+                  ? 'Unconnecting…'
+                  : rel.status === 'sent'
+                  ? 'Cancelling…'
                   : rel.status === 'received'
                     ? 'Accepting…'
                     : 'Sending…'
                 : rel.isMutual
-                  ? 'Message Partner'
+                  ? 'Connected'
                   : rel.status === 'received'
-                    ? 'Respond to Request'
+                    ? 'Accept'
                     : rel.status === 'sent'
-                      ? 'Pending Request'
+                      ? 'Request sent'
                       : 'Connect'}
             </Text>
           </AnimatedButton>
@@ -1220,20 +1226,26 @@ function DetailItem({
   icon,
   label,
   value,
+  compact,
 }: {
   icon: string;
   label: string;
   value?: string;
+  compact?: boolean;
 }) {
   if (!value) return null;
   return (
-    <View style={styles.detailItem}>
+    <View style={[styles.detailItem, compact && styles.detailItemCompact]}>
       <View style={styles.detailIconBox}>
         <Icon name={icon} size={16} color={colors.primary} />
       </View>
       <View style={styles.detailTextCol}>
-        <Text style={styles.detailLabel}>{label}</Text>
-        <Text style={styles.detailValue}>{value}</Text>
+        <Text style={styles.detailLabel} numberOfLines={2} ellipsizeMode="tail">
+          {label}
+        </Text>
+        <Text style={styles.detailValue} numberOfLines={2} ellipsizeMode="tail">
+          {value}
+        </Text>
       </View>
     </View>
   );
@@ -1581,15 +1593,20 @@ const styles = StyleSheet.create({
   detailsGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 20,
+    justifyContent: 'space-between',
+    rowGap: 16,
+  },
+  detailsGridCompact: {
+    flexDirection: 'column',
+    rowGap: 14,
   },
   detailItem: {
-    flexBasis: 180,
-    flexGrow: 1,
-    flexShrink: 1,
-    maxWidth: '100%',
+    width: '48%',
     flexDirection: 'row',
     alignItems: 'center',
+  },
+  detailItemCompact: {
+    width: '100%',
   },
   detailIconBox: {
     width: 32,
@@ -1599,9 +1616,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: 10,
+    flexShrink: 0,
   },
   detailTextCol: {
     flex: 1,
+    minWidth: 0,
   },
   detailLabel: {
     fontSize: 11,
@@ -1609,11 +1628,13 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     textTransform: 'uppercase',
     marginBottom: 2,
+    letterSpacing: 0.3,
   },
   detailValue: {
     fontSize: 14,
     color: colors.text,
     fontWeight: '600',
+    lineHeight: 18,
   },
 
 
