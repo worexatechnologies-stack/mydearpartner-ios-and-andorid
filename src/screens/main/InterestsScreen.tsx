@@ -410,7 +410,11 @@ export default function InterestsScreen({ navigation }: Props) {
 
     return (
       <View style={[styles.profilePage, { height: pageHeight }]}>
-        <MotionView index={index} replayKey={tabType} style={{ width: '100%', height: '100%' }}>
+        <MotionView
+          index={index}
+          replayKey={tabType}
+          style={{ width: '100%', height: '100%', alignItems: 'center' }}
+        >
           <TouchableOpacity
             activeOpacity={0.95}
             onPress={() =>
@@ -531,7 +535,7 @@ export default function InterestsScreen({ navigation }: Props) {
         showsHorizontalScrollIndicator={false}
         scrollEventThrottle={1}
         style={styles.tabsScroll}
-        contentContainerStyle={styles.tabs}
+        contentContainerStyle={[styles.tabs, styles.tabsContent]}
       >
         <AnimatedButton
           style={[
@@ -796,6 +800,10 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
     paddingRight: 8,
   },
+  tabsContent: {
+    flexGrow: 1,
+    justifyContent: 'center',
+  },
   tabsScroll: {
     flexGrow: 0,
     flexShrink: 0,
@@ -889,6 +897,7 @@ const styles = StyleSheet.create({
     flex: 1,
     minHeight: 0,
     maxWidth: 560,
+    alignSelf: 'center',
   },
   matchCardPhoto: {
     width: '100%',

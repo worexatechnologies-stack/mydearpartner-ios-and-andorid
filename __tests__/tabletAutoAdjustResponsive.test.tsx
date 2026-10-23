@@ -1,6 +1,7 @@
 import React from 'react';
 import Renderer, { act } from 'react-test-renderer';
 import { StyleSheet, View, Text, ScrollView } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import ScreenContainer from '../src/components/ScreenContainer';
 import EditProfileScreen from '../src/screens/EditProfileScreen';
 import WelcomeScreen from '../src/screens/auth/WelcomeScreen';
@@ -52,6 +53,8 @@ describe('Tablet and Mobile UI Auto Adjust', () => {
       );
     });
     const root = tree.root;
+    const safeArea = root.findByType(SafeAreaView);
+    expect(StyleSheet.flatten(safeArea.props.style).alignItems).toBe('center');
     const views = root.findAllByType(View);
     const constrainedView = views.find(v => {
       const s = StyleSheet.flatten(v.props.style);

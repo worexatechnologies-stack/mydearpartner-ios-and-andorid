@@ -451,7 +451,9 @@ export default function ProfileDetailScreen({ route, navigation }: Props) {
   return (
     <ScreenContainer
       style={styles.container}
-      onLayout={event => setLayoutWidth(event.nativeEvent.layout.width)}
+      onLayout={event =>
+        setLayoutWidth(Math.min(640, event.nativeEvent.layout.width))
+      }
     >
       {/* Header participates in layout so scaled text cannot overlap content. */}
       <View style={styles.floatingHeader}>
@@ -1425,6 +1427,7 @@ const styles = StyleSheet.create({
     borderRadius: 24,
     overflow: 'hidden',
     backgroundColor: '#F2E6EC',
+    alignSelf: 'center',
   },
   navTitle: {
     flex: 1,

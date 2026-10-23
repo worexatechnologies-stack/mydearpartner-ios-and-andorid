@@ -26,11 +26,15 @@ export default function ScreenContainer({
 
   return (
     <SafeAreaView
-      style={[styles.safeArea, { backgroundColor }]}
+      style={[
+        styles.safeArea,
+        { backgroundColor },
+        isLargeScreen && constrained ? styles.safeAreaConstrained : null,
+      ]}
       edges={edges}
-      onLayout={onLayout}
     >
       <View
+        onLayout={onLayout}
         style={[
           styles.container,
           isLargeScreen && constrained ? styles.constrained : null,
@@ -46,6 +50,9 @@ export default function ScreenContainer({
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
+  },
+  safeAreaConstrained: {
+    alignItems: 'center',
   },
   container: {
     flex: 1,
