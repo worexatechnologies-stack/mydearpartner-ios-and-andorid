@@ -38,7 +38,6 @@ export default function SplashScreen({ onComplete }: Props) {
         trackBg: 'rgba(224, 98, 135, 0.22)',
         progressFill: '#E06287',
         trustText: '#877780',
-        sparkle: 'rgba(224, 98, 135, 0.40)',
       }
     : {
         bgBase: '#F5D7CC',
@@ -49,7 +48,6 @@ export default function SplashScreen({ onComplete }: Props) {
         trackBg: '#D8C2C9',
         progressFill: '#2E1E2B',
         trustText: '#6B5964',
-        sparkle: '#F9E7DF',
       };
 
   // Motion Choreography Animated Values
@@ -269,14 +267,6 @@ export default function SplashScreen({ onComplete }: Props) {
         <Text style={[styles.trustText, { color: colors.trustText }]}>
           Private • 100% Manually Verified • Secure
         </Text>
-
-        {/* Subtle Corner Star Sparkle */}
-        <Text
-          style={[styles.cornerSparkle, { color: colors.sparkle }]}
-          pointerEvents="none"
-        >
-          ✦
-        </Text>
       </Animated.View>
     </View>
   );
@@ -368,11 +358,5 @@ const styles = StyleSheet.create({
     fontWeight: '500',
     letterSpacing: 0.2,
     textAlign: 'center',
-  },
-  cornerSparkle: {
-    position: 'absolute',
-    right: 28,
-    bottom: 26,
-    fontSize: 26,
   },
 });
