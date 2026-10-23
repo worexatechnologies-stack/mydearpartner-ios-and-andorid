@@ -1,0 +1,117 @@
+--- a/backend/config/env_validator.py
++++ b/backend/config/env_validator.py
+@@ -12,9 +12,9 @@
+ PROJECT_DIR = BASE_DIR.parent
+ 
+ # 1. Detect environment and load matching env file
+-DJANGO_ENV = os.environ.get('DJANGO_ENV', 'local').lower()
++DJANGO_ENV = os.environ.get('DJANGO_ENV', 'local').strip().lower()
+ if DJANGO_ENV not in ('local', 'staging', 'production'):
+-    DJANGO_ENV = 'local'
++    raise ImproperlyConfigured('DJANGO_ENV must be local, staging or production.')
+ 
+ # Prefer the environment-specific root file when one exists. The generic root
+ # file remains the local default, and component-local files are legacy fallbacks.
+@@ -111,17 +111,17 @@
+             errors.append("RAZORPAY_KEY_ID: Must start with 'rzp_test_' (test) or 'rzp_live_' (live).")
+ 
+     # Prevent accidental crossover between environment tiers
+-    if DJANGO_ENV in ('staging', 'production'):
++    if DJANGO_ENV == 'production':
+         if RAZORPAY_MODE != 'live':
+-            errors.append("RAZORPAY_MODE: Must be 'live' in production/staging environments to prevent test mode transactions.")
++            errors.append("RAZORPAY_MODE: Must be 'live' in production to prevent test mode transactions.")
+         if RAZORPAY_KEY_ID and not RAZORPAY_KEY_ID.startswith('rzp_live_'):
+-            errors.append("RAZORPAY_KEY_ID: Must start with 'rzp_live_' in production/staging environments.")
+-    elif DJANGO_ENV == 'local':
+-        # Allow demo keys or test keys in local mode
++            errors.append("RAZORPAY_KEY_ID: Must start with 'rzp_live_' in production.")
++    elif DJANGO_ENV in ('local', 'staging'):
++        # Isolated staging and local development must never charge live money.
+         if RAZORPAY_MODE != 'test':
+-            errors.append("RAZORPAY_MODE: Must be 'test' in local development environment.")
++            errors.append("RAZORPAY_MODE: Must be 'test' in local/staging environments.")
+         if RAZORPAY_KEY_ID and not RAZORPAY_KEY_ID.startswith('rzp_test_') and RAZORPAY_KEY_ID != 'rzp_test_replace_me':
+-            errors.append("RAZORPAY_KEY_ID: Must start with 'rzp_test_' in local development.")
++            errors.append("RAZORPAY_KEY_ID: Must start with 'rzp_test_' in local/staging environments.")
+ 
+ PERMANENT_DELETE_DOCUMENT_POLICY = os.environ.get(
+     'PERMANENT_DELETE_DOCUMENT_POLICY', 'delete_immediately'
+--- /dev/null
++++ b/backend/apps/accounts/tests/test_release_environment.py
+@@ -0,0 +1,66 @@
++import os
++import subprocess
++import sys
++from pathlib import Path
++
++import pytest
++
++
++BASE_DIR = Path(__file__).resolve().parents[3]
++
++
++def validate_environment(tier, mode, key):
++    # Fully synthetic configuration: no provider requests or database access.
++    env = {
++        'PATH': os.environ.get('PATH', ''),
++        'DJANGO_ENV': tier,
++        'SECRET_KEY': 'audit-only-secret-abcdefghijklmnopqrstuvwxyz-0123456789',
++        'DB_PASSWORD': 'audit-only-password',
++        'DEBUG': 'false',
++        'RENFLAIR_API_KEY': 'local-test-only',
++        'PAYMENT_MODE': 'razorpay',
++        'RAZORPAY_MODE': mode,
++        'RAZORPAY_KEY_ID': key,
++        'RAZORPAY_KEY_SECRET': 'audit-only-provider-secret',
++        'SECURE_PROXY_SSL_HEADER': 'HTTP_X_FORWARDED_PROTO,https',
++        'EMAIL_BACKEND': 'django.core.mail.backends.locmem.EmailBackend',
++        'SUPERADMIN_EMAIL': 'audit-owner@example.test',
++        'SUPERADMIN_PASSWORD': 'audit-only-owner-password',
++        'ENABLE_DEVELOPMENT_SEED': 'false',
++        'ENABLE_DEBUG_TOOLBAR': 'false',
++        'ENABLE_SWAGGER': 'false',
++        'ENABLE_API_DOCS': 'false',
++    }
++    return subprocess.run(
++        [sys.executable, '-c', 'from config.env_validator import config'],
++        cwd=BASE_DIR, env=env, capture_output=True, text=True, timeout=15,
++    )
++
++
++@pytest.mark.parametrize('tier,mode,key', [
++    ('staging', 'test', 'rzp_test_AuditOnly123'),
++    ('production', 'live', 'rzp_live_AuditOnly123'),
++    ('local', 'test', 'rzp_test_AuditOnly123'),
++])
++def test_payment_environment_accepts_only_the_intended_tier(tier, mode, key):
++    result = validate_environment(tier, mode, key)
++    assert result.returncode == 0, result.stderr
++
++
++@pytest.mark.parametrize('tier,mode,key', [
++    ('staging', 'live', 'rzp_live_AuditOnly123'),
++    ('production', 'test', 'rzp_test_AuditOnly123'),
++    ('local', 'live', 'rzp_live_AuditOnly123'),
++    ('staging', 'test', 'rzp_live_AuditOnly123'),
++])
++def test_payment_environment_rejects_cross_tier_keys(tier, mode, key):
++    result = validate_environment(tier, mode, key)
++    assert result.returncode != 0
++    assert 'RAZORPAY_' in result.stderr
++    assert 'audit-only-provider-secret' not in result.stderr
++
++
++def test_invalid_environment_never_falls_back_to_development_defaults():
++    result = validate_environment('prodution', 'test', 'rzp_test_AuditOnly123')
++    assert result.returncode != 0
++    assert 'DJANGO_ENV must be local, staging or production.' in result.stderr
+--- a/backend/requirements/base.txt
++++ b/backend/requirements/base.txt
+@@ -1,5 +1,5 @@
+ Django==5.2.18
+-djangorestframework==3.18.1
++djangorestframework==3.18.2
+ djangorestframework-simplejwt==5.5.1
+ psycopg2-binary==2.9.12
+ django-filter==25.1

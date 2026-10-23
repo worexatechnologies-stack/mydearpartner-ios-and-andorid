@@ -1,5 +1,5 @@
 {
-  "version": "2026-09-28",
+  "version": "2026-10-23",
   "privacy": {
     "title": "Privacy Policy",
     "sections": [
@@ -9,7 +9,7 @@
       },
       {
         "heading": "Information used by the service",
-        "body": "We process account identifiers and credentials; profile information you provide, including age, location, religion, occupation and preferences; uploaded profile photos; interests and messages; notification preferences and device push tokens; membership and payment records; and reports you submit. Optional verification uploads include identity or income documents and selfies. Provide only information needed for the feature you choose."
+        "body": "We process account identifiers and credentials; profile information you provide, including age, location, religion, occupation and preferences; uploaded profile photos; interests and messages; notification preferences and device push tokens; membership and payment records; and reports you submit. Optional verification uploads include identity or income documents and selfies. Provide only information needed for the feature you choose. The app also records product interactions, app version and platform, and crash diagnostics. Crash reports may be linked to your account identifier."
       },
       {
         "heading": "Purpose and visibility",
@@ -17,7 +17,7 @@
       },
       {
         "heading": "Service providers",
-        "body": "Our hosting services process app data. Firebase Cloud Messaging delivers push notifications. Razorpay processes payments when that checkout is available. Payment providers receive the information needed to process a transaction under their own privacy policies. Information may also be disclosed where legally required. We do not sell personal data."
+        "body": "Our hosting services process app data. Firebase Cloud Messaging delivers push notifications. Firebase Analytics records product usage events, and Firebase Crashlytics processes crash diagnostics to help us identify app failures. Razorpay processes payments when that checkout is available. Payment providers receive the information needed to process a transaction under their own privacy policies. Information may also be disclosed where legally required. We do not sell personal data."
       },
       {
         "heading": "Permissions and choices",
