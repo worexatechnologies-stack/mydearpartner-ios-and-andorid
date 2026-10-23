@@ -212,3 +212,45 @@ test('an authoritative blocked-by-user send denial disables replies without the 
     alert.mockRestore(); send.mockClear();
   }
 });
+
+test('chat offers Unconnect, disables the composer when ended, and restores it after reconnection', async () => {
+  const data = useAppData() as any;
+  data.getInterestRelationship = () => ({ status: 'accepted', activeInterest: { id: 'match' } });
+  data.cancelInterest = jest.fn().mockResolvedValue(undefined);
+  data.chats = [{ id: 'chat', connectionClosed: false }];
+  const alert = jest.spyOn(Native.Alert, 'alert').mockImplementation(() => {});
+  const props: any = { navigation: { setOptions: jest.fn() }, route: { params: { chatId: 'chat', otherProfileId: 'other' } } };
+  let tree!: Renderer.ReactTestRenderer;
+  try {
+    await act(async () => { tree = Renderer.create(<ChatScreen {...props} />); });
+    await act(async () => { tree.root.findAllByProps({ accessibilityLabel: 'Chat options' })[0].props.onPress(); });
+    const action = tree.root.findAllByType(Native.TouchableOpacity).find(node => node.props.accessibilityLabel === 'Unconnect')!;
+    await act(async () => { action.props.onPress(); });
+    const actions = alert.mock.calls[alert.mock.calls.length - 1][2]!;
+    await act(async () => { await actions.find(item => item.text === 'Unconnect')!.onPress!(); });
+    expect(data.cancelInterest).toHaveBeenCalledWith('match');
+    data.chats = [{ id: 'chat', connectionClosed: true }];
+    await act(async () => { tree.update(<ChatScreen {...props} />); });
+    expect(tree.root.findAllByType(TextInput)).toHaveLength(0);
+    expect(tree.root.findAllByType(Native.Text).some(node => node.props.children === 'This connection has ended. Messaging is unavailable.')).toBe(true);
+    data.chats = [{ id: 'chat', connectionClosed: false }];
+    await act(async () => { tree.update(<ChatScreen {...props} />); });
+    expect(tree.root.findAllByType(TextInput)).toHaveLength(1);
+  } finally {
+    if (tree) await act(async () => tree.unmount());
+    delete data.chats;
+    delete data.getInterestRelationship;
+    delete data.cancelInterest;
+    alert.mockRestore();
+  }
+});
+
+jest.mock('@react-native-async-storage/async-storage', () => {
+  const values = new Map<string, string>();
+  return {
+    getItem: jest.fn(async (key: string) => values.get(key) ?? null),
+    setItem: jest.fn(async (key: string, value: string) => { values.set(key, value); }),
+    removeItem: jest.fn(async (key: string) => { values.delete(key); }),
+    clear: jest.fn(async () => { values.clear(); }),
+  };
+});

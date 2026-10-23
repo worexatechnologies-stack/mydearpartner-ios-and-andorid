@@ -4,6 +4,7 @@ import {
   
   Alert,
   FlatList,
+  Platform,
   StyleSheet,
   Text,
   TouchableOpacity,
@@ -227,6 +228,11 @@ export default function BlockedScreen() {
           keyExtractor={item => item.id}
           contentContainerStyle={styles.list}
           showsVerticalScrollIndicator={false}
+          scrollEventThrottle={1}
+          removeClippedSubviews={Platform.OS === 'android'}
+          maxToRenderPerBatch={10}
+          initialNumToRender={8}
+          windowSize={7}
           ListEmptyComponent={
             <EmptyState
               icon="shield-checkmark-outline"
@@ -242,6 +248,11 @@ export default function BlockedScreen() {
           keyExtractor={item => item.id}
           contentContainerStyle={styles.list}
           showsVerticalScrollIndicator={false}
+          scrollEventThrottle={1}
+          removeClippedSubviews={Platform.OS === 'android'}
+          maxToRenderPerBatch={10}
+          initialNumToRender={8}
+          windowSize={7}
           ListEmptyComponent={
             <EmptyState
               icon="chatbubbles-outline"

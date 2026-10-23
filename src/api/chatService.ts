@@ -71,6 +71,8 @@ async function mapChat(bc: BackendChat, myId: string): Promise<Chat> {
         : undefined,
     lastSenderId: lastSenderId ? String(lastSenderId) : undefined,
     otherProfile: bc.profile ? mapProfile(bc.profile) : undefined,
+    connectionClosed: typeof raw.connection_closed === 'boolean' ? raw.connection_closed
+      : typeof raw.connectionClosed === 'boolean' ? raw.connectionClosed : undefined,
     unreadCount: Math.max(0, Number(raw.unread_count ?? raw.unread_messages_count ?? raw.unread) || 0),
   };
 }
@@ -153,12 +155,31 @@ export async function getOrCreateChat(
   myId: string,
   otherUserId?: string,
 ): Promise<Chat> {
-  const data = await post<any>('/conversations/', {
-    partner_id: otherUserId || otherProfileId,
-  });
+  const primaryId = otherUserId || otherProfileId;
+  const secondaryId =
+    otherUserId && otherProfileId !== otherUserId ? otherProfileId : undefined;
+  try {
+    const data = await post<any>('/conversations/', {
+      partner_id: primaryId,
+    });
 
-  const chat = data?.data ?? data;
-  return mapChat(chat, myId);
+    const chat = data?.data ?? data;
+    return mapChat(chat, myId);
+  } catch (err: any) {
+    if (
+      secondaryId &&
+      (err?.status === 404 ||
+        err?.message?.toLowerCase().includes('not found') ||
+        err?.message?.toLowerCase().includes('no longer exists'))
+    ) {
+      const data = await post<any>('/conversations/', {
+        partner_id: secondaryId,
+      });
+      const chat = data?.data ?? data;
+      return mapChat(chat, myId);
+    }
+    throw err;
+  }
 }
 
 export interface MessagePage {

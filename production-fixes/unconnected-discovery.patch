@@ -1,0 +1,70 @@
+diff --git a/backend/apps/core/services/profile_service.py b/backend/apps/core/services/profile_service.py
+index 1ab608a..99aafe0 100644
+--- a/backend/apps/core/services/profile_service.py
++++ b/backend/apps/core/services/profile_service.py
+@@ -55,7 +55,7 @@ class ProfileService:
+         filters = filters or {}
+         
+         # Discover feed exclusions: when browsing Discover, hide members already interacted with
+-        # (interests sent, likes, accepted matches in either direction, and passed profiles).
++        # (live requests, accepted matches in either direction, and passed profiles).
+         purpose = str(filters.get('purpose', '')).strip().lower()
+         exclude_interacted = (
+             str(filters.get('exclude_interacted', '')).strip().lower() in ('true', '1')
+@@ -65,14 +65,15 @@ class ProfileService:
+             from apps.core.models import Interest
+             from apps.matching.models import MemberPass
+ 
+-            # 1. Hide members viewer sent an interest or like to
+-            sent_receivers = Interest.objects.filter(sender=viewer).values_list('receiver_id', flat=True)
++            # Historical declined/withdrawn rows do not establish a connection.
++            active_statuses = (Interest.Status.PENDING, Interest.Status.ACCEPTED)
++            sent_receivers = Interest.objects.filter(sender=viewer, status__in=active_statuses).values_list('receiver_id', flat=True)
+             queryset = queryset.exclude(pk__in=sent_receivers)
+ 
+-            # 2. Hide accepted matches (in either direction)
++            # 2. Hide active incoming requests and matches
+             accepted_match_senders = Interest.objects.filter(
+                 receiver=viewer,
+-                status=Interest.Status.ACCEPTED
++                status__in=active_statuses
+             ).values_list('sender_id', flat=True)
+             queryset = queryset.exclude(pk__in=accepted_match_senders)
+ 
+diff --git a/backend/apps/core/tests/test_unconnected_discovery.py b/backend/apps/core/tests/test_unconnected_discovery.py
+new file mode 100644
+index 0000000..d2f7224
+--- /dev/null
++++ b/backend/apps/core/tests/test_unconnected_discovery.py
+@@ -0,0 +1,31 @@
++import pytest
++from apps.accounts.models import Member, MemberProfile
++from apps.core.models import Interest, ProfileBlock
++from apps.core.services.profile_service import ProfileService
++
++pytestmark = pytest.mark.django_db
++
++
++@pytest.mark.parametrize('status', ['DECLINED', 'WITHDRAWN'])
++@pytest.mark.parametrize('incoming', [False, True])
++def test_ended_relationships_reappear_in_search_and_discover(member, status, incoming):
++    member.gender = 'Male'
++    member.save(update_fields=['gender'])
++    partner = Member.objects.create_user(email=f'{status}-{incoming}@example.com', password='test', gender='Female',
++                                        is_mobile_verified=True, profile_status=Member.ProfileStatus.APPROVED)
++    MemberProfile.objects.get_or_create(member=partner)
++    interest = Interest.objects.create(sender=partner if incoming else member,
++                                      receiver=member if incoming else partner, status=status)
++    for purpose in ('search', 'discover'):
++        assert ProfileService.search_profiles(member, {'purpose': purpose}).filter(pk=partner.pk).exists()
++    interest.status = Interest.Status.PENDING
++    interest.save(update_fields=['status'])
++    assert not ProfileService.search_profiles(member, {'purpose': 'discover'}).filter(pk=partner.pk).exists()
++    interest.status = Interest.Status.ACCEPTED
++    interest.save(update_fields=['status'])
++    assert not ProfileService.search_profiles(member, {'purpose': 'discover'}).filter(pk=partner.pk).exists()
++    interest.status = status
++    interest.save(update_fields=['status'])
++    ProfileBlock.objects.create(blocker=partner, blocked=member)
++    for purpose in ('search', 'discover'):
++        assert not ProfileService.search_profiles(member, {'purpose': purpose}).filter(pk=partner.pk).exists()

@@ -27,6 +27,12 @@ export async function handleRealtimeNotification(event: any) {
     kind: event.data?.kind ?? event.data?.notification_type ?? event.notification_type ?? event.type,
   };
   const notificationType = event.notification_type ?? data.notification_type ?? event.type;
+  if (String(notificationType).toUpperCase() === 'SAVED_SEARCH_MATCH') {
+    await handleIncomingPush({ messageId: event.id, data: { ...data,
+      notification_type: 'SAVED_SEARCH_MATCH', notification_id: event.id ?? data.notification_id,
+      link_url: event.link_url ?? data.link_url } }, true);
+    return;
+  }
   if (notificationType === 'MATCH_REMOVED' || data.kind === 'MATCH_REMOVED' || event.type === 'match.removed') {
     DeviceEventEmitter.emit('REFRESH_INTERESTS');
     DeviceEventEmitter.emit('REFRESH_CHATS');

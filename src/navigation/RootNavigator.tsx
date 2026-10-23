@@ -23,8 +23,8 @@ import { RootStackParamList } from './types';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
-export default function RootNavigator() {
-  const [splashComplete, setSplashComplete] = useState(false);
+export default function RootNavigator({ skipSplash = false }: { skipSplash?: boolean } = {}) {
+  const [splashComplete, setSplashComplete] = useState(skipSplash);
   const finishSplash = useCallback(() => setSplashComplete(true), []);
   const { isLoading, currentUser, sessionError, retrySession } = useAuth();
 

@@ -1,20 +1,22 @@
 import { colors } from '../theme/theme';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
-import React from 'react';
+import React, { useEffect, useRef } from 'react';
 import {
+  Animated,
   StyleSheet,
   Text,
   View,
   useWindowDimensions,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/Ionicons';
-import OfflineBanner from '../components/OfflineBanner';
 import ChatsListScreen from '../screens/main/ChatsListScreen';
 import DiscoverScreen from '../screens/main/DiscoverScreen';
 import InterestsScreen from '../screens/main/InterestsScreen';
 import MyProfileScreen from '../screens/main/MyProfileScreen';
 import SearchScreen from '../screens/main/SearchScreen';
 import { useAppStats } from '../hooks/useAppStats';
+import { motion } from '../theme/motion';
+import { useReducedMotion } from '../hooks/useReducedMotion';
 
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { FLOATING_TAB_BAR_BOTTOM } from './tabBarLayout';
@@ -59,6 +61,7 @@ function TabIcon({
   hasProfileAlert?: boolean;
 }) {
   const config = tabConfig[routeName];
+  const reducedMotion = useReducedMotion();
   const showBadge = routeName === 'Chats' && unreadCount > 0;
   const badgeText = unreadCount > 10 ? '10+' : String(unreadCount);
   const showInterestBadge =
@@ -67,25 +70,90 @@ function TabIcon({
     pendingInterestsCount > 9 ? '9+' : String(pendingInterestsCount);
   const iconSize = isSmallScreen ? 22 : 24;
 
+  const scaleAnim = useRef(
+    new Animated.Value(focused ? motion.scale.activeTab : 1.0)
+  ).current;
+  const bgOpacity = useRef(new Animated.Value(focused ? 1 : 0)).current;
+  const badgeScale = useRef(
+    new Animated.Value(showBadge || showInterestBadge ? 1 : 0)
+  ).current;
+
+  useEffect(() => {
+    if (reducedMotion) {
+      scaleAnim.setValue(focused ? motion.scale.activeTab : 1.0);
+      bgOpacity.setValue(focused ? 1 : 0);
+      return;
+    }
+    Animated.parallel([
+      Animated.spring(scaleAnim, {
+        toValue: focused ? motion.scale.activeTab : 1.0,
+        damping: motion.spring.interactive.damping,
+        stiffness: motion.spring.interactive.stiffness,
+        mass: motion.spring.interactive.mass,
+        useNativeDriver: true,
+      }),
+      Animated.timing(bgOpacity, {
+        toValue: focused ? 1 : 0,
+        duration: motion.duration.micro,
+        useNativeDriver: true,
+      }),
+    ]).start();
+  }, [focused, reducedMotion, scaleAnim, bgOpacity]);
+
+  useEffect(() => {
+    const hasBadge = showBadge || showInterestBadge;
+    if (reducedMotion) {
+      badgeScale.setValue(hasBadge ? 1 : 0);
+      return;
+    }
+    if (hasBadge) {
+      badgeScale.setValue(0.5);
+      Animated.spring(badgeScale, {
+        toValue: 1,
+        damping: motion.spring.bouncy.damping,
+        stiffness: motion.spring.bouncy.stiffness,
+        mass: motion.spring.bouncy.mass,
+        useNativeDriver: true,
+      }).start();
+    } else {
+      badgeScale.setValue(0);
+    }
+  }, [
+    showBadge,
+    showInterestBadge,
+    badgeScale,
+    reducedMotion,
+    unreadCount,
+    pendingInterestsCount,
+  ]);
+
   return (
     <View style={styles.iconContainer}>
-      {focused && <View style={styles.iconActiveBg} />}
-      <View>
+      <Animated.View style={[styles.iconActiveBg, { opacity: bgOpacity }]} />
+      <Animated.View style={{ transform: [{ scale: scaleAnim }] }}>
         <Icon
           name={focused ? config.icon : config.iconOutline}
           size={iconSize}
           color={color}
         />
-      </View>
+      </Animated.View>
       {showBadge && (
-        <View style={styles.badgeContainer}>
+        <Animated.View
+          style={[styles.badgeContainer, { transform: [{ scale: badgeScale }] }]}
+        >
           <Text style={styles.badgeText}>{badgeText}</Text>
-        </View>
+        </Animated.View>
       )}
       {showInterestBadge && (
-        <View style={[styles.badgeContainer, styles.interestBadge]}>
+        <Animated.View
+          style={[
+            styles.badgeContainer,
+            styles.interestBadge,
+            { transform: [{ scale: badgeScale }] },
+          ]}
+        >
           <Text style={styles.badgeText}>{interestBadgeText}</Text>
-        </View>
+        </Animated.View>
       )}
       {routeName === 'MyProfile' && hasProfileAlert && (
         <View style={styles.profileAlertDot} />
@@ -179,7 +247,6 @@ export default function MainTabNavigator() {
           options={{ tabBarLabel: tabConfig.MyProfile.label }}
         />
       </Tab.Navigator>
-      <OfflineBanner />
     </View>
   );
 }

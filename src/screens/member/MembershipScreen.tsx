@@ -30,6 +30,7 @@ import {
   waitForMembershipActivation,
 } from '../../api/paymentService';
 import analyticsService from '../../services/analyticsService';
+import { API_ORIGIN } from '../../config/env';
 import { useAuth } from '../../context/AuthContext';
 import { RootStackParamList } from '../../navigation/types';
 import { usePlanAllowance } from '../../utils/planAllowance';
@@ -38,7 +39,7 @@ import { triggerHaptic } from '../../utils/haptics';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Membership'>;
 
-const PAYMENT_BASE_URL = 'https://mydearpartner.in/membership/';
+const PAYMENT_BASE_URL = `${API_ORIGIN}/membership/`;
 
 export interface PlanTier {
   duration: string;
@@ -122,7 +123,7 @@ const DEFAULT_PLANS: Plan[] = [
     gradientColors: ['#F59E0B', '#D97706'],
     accentColor: colors.action,
     icon: 'heart-outline',
-    paymentUrl: 'https://mydearpartner.in/membership/gold/',
+    paymentUrl: `${PAYMENT_BASE_URL}gold/`,
   },
   {
     id: 'elite',
@@ -153,7 +154,7 @@ const DEFAULT_PLANS: Plan[] = [
     gradientColors: ['#772544', '#302432'],
     accentColor: '#772544',
     icon: 'star-outline',
-    paymentUrl: 'https://mydearpartner.in/membership/elite/',
+    paymentUrl: `${PAYMENT_BASE_URL}elite/`,
   },
   {
     id: 'platinum',
@@ -184,7 +185,7 @@ const DEFAULT_PLANS: Plan[] = [
     gradientColors: ['#2563EB', '#1E40AF'],
     accentColor: '#2563EB',
     icon: 'shield-checkmark-outline',
-    paymentUrl: 'https://mydearpartner.in/membership/platinum/',
+    paymentUrl: `${PAYMENT_BASE_URL}platinum/`,
   },
 ];
 
@@ -205,6 +206,16 @@ function PlanCard({
   onSelect: () => void;
 }) {
   const scaleAnim = useRef(new Animated.Value(1)).current;
+  const radioScale = useRef(new Animated.Value(isSelected ? 1 : 0.6)).current;
+
+  useEffect(() => {
+    Animated.spring(radioScale, {
+      toValue: isSelected ? 1 : 0.6,
+      friction: 5,
+      tension: 100,
+      useNativeDriver: true,
+    }).start();
+  }, [isSelected, radioScale]);
 
   const pressIn = () =>
     Animated.spring(scaleAnim, {
@@ -313,7 +324,9 @@ function PlanCard({
                   ]}
                 >
                   {isSelected && (
-                    <Icon name="checkmark" size={12} color="#FFFFFF" />
+                    <Animated.View style={{ transform: [{ scale: radioScale }] }}>
+                      <Icon name="checkmark" size={12} color="#FFFFFF" />
+                    </Animated.View>
                   )}
                 </View>
               </View>
@@ -653,8 +666,17 @@ export default function MembershipScreen({ navigation }: Props) {
         return;
       }
       if (isProcessing) return;
-
       setIsProcessing(true);
+
+      if (Platform.OS === 'ios') {
+        Alert.alert(
+          'App Store Subscriptions',
+          'In-app subscription purchasing via Apple In-App Purchase is being enabled for the App Store release. Active memberships associated with your account are automatically recognized.',
+          [{ text: 'OK' }],
+        );
+        setIsProcessing(false);
+        return;
+      }
 
       try {
         if (!plan.membershipPlanId) {
@@ -665,7 +687,7 @@ export default function MembershipScreen({ navigation }: Props) {
         const order = await createPaymentOrder(plan.membershipPlanId);
         const options: any = {
           description: `${plan.name} – ${plan.duration} membership`,
-          image: 'https://mydearpartner.in/static/logo.png',
+          image: `${API_ORIGIN}/static/logo.png`,
           key: order.key_id,
           order_id: order.order_id,
           amount: order.amount,
@@ -834,6 +856,7 @@ export default function MembershipScreen({ navigation }: Props) {
           { paddingBottom: insets.bottom + 170 },
         ]}
         showsVerticalScrollIndicator={false}
+        scrollEventThrottle={1}
       >
         {isLoadingPlans ? (
           <View style={styles.loadingBox}>
@@ -866,7 +889,9 @@ export default function MembershipScreen({ navigation }: Props) {
               style={{ marginRight: 8 }}
             />
             <Text style={styles.trustBannerTitle}>
-              100% Secure Checkout powered by Razorpay
+              {Platform.OS === 'ios'
+                ? '100% Secure & Verified Member Checkout'
+                : '100% Secure Checkout powered by Razorpay'}
             </Text>
             <View style={styles.pciBadge}>
               <Text style={styles.pciBadgeText}>PCI-DSS ENCRYPTED</Text>

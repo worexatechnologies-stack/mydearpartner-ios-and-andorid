@@ -3,6 +3,7 @@
 
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.CAMERA" />
+    <uses-feature android:name="android.hardware.camera" android:required="false" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.VIBRATE" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
@@ -16,7 +17,8 @@
       android:resizeableActivity="true"
       android:theme="@style/AppTheme"
       android:usesCleartextTraffic="${usesCleartextTraffic}"
-      android:supportsRtl="true">
+      android:supportsRtl="true"
+      android:hardwareAccelerated="true">
 
       <!-- Set custom default icon. This is used when no icon is set for incoming notification messages. -->
       <meta-data
@@ -37,6 +39,7 @@
         android:launchMode="singleTask"
         android:windowSoftInputMode="adjustResize"
         android:theme="@style/SplashTheme"
+        android:hardwareAccelerated="true"
         android:exported="true">
         <intent-filter>
             <action android:name="android.intent.action.MAIN" />
@@ -50,9 +53,12 @@
         </intent-filter>
       </activity>
       <!-- Allow checkout to resize in split screen and on foldables/tablets.
-           Its runtime orientation behavior is controlled by rotate: true. -->
+           Its runtime orientation behavior is controlled by rotate: true.
+           CheckoutActivity is supplied by Razorpay standard-core (a transitive
+           SDK dependency); verified in its classes.jar. Lint misses that class. -->
       <activity
         android:name="com.razorpay.CheckoutActivity"
+        tools:ignore="MissingClass"
         android:resizeableActivity="true" />
     </application>
 </manifest>

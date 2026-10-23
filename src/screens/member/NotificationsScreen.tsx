@@ -2,26 +2,31 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   FlatList,
   Modal,
+  Platform,
   ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
   View,
   Image,
+  DeviceEventEmitter,
 } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import Icon from 'react-native-vector-icons/Ionicons';
 import ScreenContainer from '../../components/ScreenContainer';
 import NotificationDiagnosticsCard from '../../components/NotificationDiagnosticsCard';
 import { useAppData } from '../../context/AppDataContext';
+import { useAuth } from '../../context/AuthContext';
+import { SavedSearchAlert, savedSearchService } from '../../api/savedSearchService';
 import {
   navigateToChat,
   navigateToInterests,
+  navigateToSavedSearch,
 } from '../../navigation/navigationRef';
 import { RootStackParamList } from '../../navigation/types';
 import { colors } from '../../theme/theme';
 import { formatRelativeTime } from '../../utils/relativeTime';
-import { getItem, setItem } from '../../utils/storage';
+import { accountStorageKey, getItem, setItem } from '../../utils/storage';
 import { triggerHaptic } from '../../utils/haptics';
 import {
   NotificationDiagnostics,
@@ -46,11 +51,15 @@ interface NotificationItem {
   otherProfileId?: string;
   fallbackName?: string;
   fallbackPhoto?: string;
+  savedSearchId?: string;
 }
 
 type FilterTab = 'all' | 'message' | 'like' | 'system';
 
 export default function NotificationsScreen({ navigation }: Props) {
+  const { currentUser } = useAuth();
+  const readStorageKey = accountStorageKey(READ_NOTIFS_KEY, currentUser?.id ?? 'signed-out');
+  const [savedSearchAlerts, setSavedSearchAlerts] = useState<SavedSearchAlert[]>([]);
   const {
     receivedInterests,
     chats,
@@ -66,27 +75,51 @@ export default function NotificationsScreen({ navigation }: Props) {
 
   // Load persisted read notification IDs on mount
   useEffect(() => {
-    getItem<string[]>(READ_NOTIFS_KEY).then(saved => {
-      if (saved && Array.isArray(saved)) {
+    let active = true;
+    let revision = 0;
+    setReadIds(new Set());
+    setSavedSearchAlerts([]);
+    getItem<string[]>(readStorageKey).then(saved => {
+      if (active && saved && Array.isArray(saved)) {
         setReadIds(new Set(saved));
       }
     });
+    const loadAlerts = async () => {
+      if (!currentUser?.id) return;
+      const started = ++revision;
+      try {
+        const alerts = await savedSearchService.alerts();
+        if (active && started === revision) setSavedSearchAlerts(alerts);
+      } catch { /* Existing app versions can run before the feature is deployed. */ }
+    };
+    loadAlerts();
+    const refresh = DeviceEventEmitter.addListener('REFRESH_SAVED_SEARCH_ALERTS', loadAlerts);
+    const focus = navigation.addListener('focus', loadAlerts);
 
     // Check notification health quietly in background
     readNotificationDiagnostics().then(setDiagnostics).catch(() => {});
-  }, []);
+    return () => { active = false; refresh.remove(); focus(); };
+  }, [currentUser?.id, readStorageKey, navigation]);
 
   const markIdsAsRead = useCallback((ids: string[]) => {
     setReadIds(prev => {
       const next = new Set([...prev, ...ids]);
-      setItem(READ_NOTIFS_KEY, Array.from(next));
+      setItem(readStorageKey, Array.from(next));
       return next;
     });
-  }, []);
+    for (const id of ids) {
+      if (id.startsWith('saved-search-')) savedSearchService.readAlert(id.slice('saved-search-'.length)).catch(() => {});
+    }
+  }, [readStorageKey]);
 
   // Generate dynamic notifications from real chats and interests
   const notifications = useMemo(() => {
     const list: NotificationItem[] = [];
+    savedSearchAlerts.forEach(alert => list.push({
+      id: `saved-search-${alert.id}`, title: alert.title, body: alert.message,
+      time: formatRelativeTime(Date.parse(alert.created_at)), read: alert.is_read || readIds.has(`saved-search-${alert.id}`),
+      type: 'system', savedSearchId: alert.search_id,
+    }));
 
     // 1. Chat & Message notifications
     chats.forEach(chat => {
@@ -167,6 +200,7 @@ export default function NotificationsScreen({ navigation }: Props) {
     getProfileById,
     clearedNotificationIds,
     readIds,
+    savedSearchAlerts,
   ]);
 
   const unreadCount = useMemo(() => notifications.filter(n => !n.read).length, [notifications]);
@@ -199,6 +233,7 @@ export default function NotificationsScreen({ navigation }: Props) {
   const handleNotificationPress = (item: NotificationItem) => {
     triggerHaptic('light');
     markIdsAsRead([item.id]);
+    if (item.savedSearchId) { navigateToSavedSearch(item.savedSearchId); return; }
 
     if (item.type === 'message' && item.chatId) {
       navigateToChat(
@@ -325,6 +360,7 @@ export default function NotificationsScreen({ navigation }: Props) {
         <ScrollView
           horizontal
           showsHorizontalScrollIndicator={false}
+          scrollEventThrottle={1}
           contentContainerStyle={styles.tabsScrollContent}
         >
           {[
@@ -373,6 +409,11 @@ export default function NotificationsScreen({ navigation }: Props) {
         keyExtractor={item => item.id}
         contentContainerStyle={styles.listContent}
         showsVerticalScrollIndicator={false}
+        scrollEventThrottle={1}
+        removeClippedSubviews={Platform.OS === 'android'}
+        maxToRenderPerBatch={10}
+        initialNumToRender={8}
+        windowSize={7}
         ListEmptyComponent={
           <View style={styles.emptyContainer}>
             <View style={styles.emptyIconCircle}>

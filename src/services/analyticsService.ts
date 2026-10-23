@@ -20,9 +20,10 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Platform } from 'react-native';
 import { getAnalytics, logEvent as logFirebaseEvent } from '@react-native-firebase/analytics';
+import { BUILD_ENVIRONMENT, SESSION_STORAGE_SUFFIX } from '../config/env';
+import { version as APP_VERSION } from '../../package.json';
 
-const STORAGE_KEY_FIRST_OPEN = '@mdp_analytics_first_open_logged';
-const APP_VERSION = '0.3.3';
+const STORAGE_KEY_FIRST_OPEN = `@mdp_analytics_first_open_logged${SESSION_STORAGE_SUFFIX}`;
 
 export type CountBand = '0' | '1-5' | '6-15' | '16-30' | '>30';
 export type LatencyBand = '<200ms' | '200-500ms' | '500ms-1s' | '1-3s' | '>3s';
@@ -109,6 +110,7 @@ class AnalyticsService {
     name: string,
     params: Record<string, any> = {},
   ): Promise<boolean> {
+    if (BUILD_ENVIRONMENT === 'staging') return false;
     try {
       // Never print event parameters: callers may accidentally supply personal data.
       await logFirebaseEvent(getAnalytics(), name, params);

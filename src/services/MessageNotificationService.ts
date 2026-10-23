@@ -1,4 +1,5 @@
 import { DeviceEventEmitter } from 'react-native';
+import { SESSION_STORAGE_SUFFIX } from '../config/env';
 /** Decrypt-before-display pipeline shared by foreground and headless FCM work. */
 import notifee from '@notifee/react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -17,7 +18,7 @@ import { waitForMessagingCryptoReady } from './MessagingCryptoLifecycle';
 import { displayNotification } from './PushNotificationService';
 import { storeBackgroundMessage } from './BackgroundDataStore';
 
-const PROCESSED_PUSHES_KEY = '@mdp/processed_message_pushes_v1';
+const PROCESSED_PUSHES_KEY = `@mdp/processed_message_pushes_v1${SESSION_STORAGE_SUFFIX}`;
 const MAX_PROCESSED_PUSHES = 200;
 const inFlight = new Set<string>();
 

@@ -1,3 +1,4 @@
+import { hasActiveDiscoveryRelationship } from '../../utils/discoveryFilters';
 import ScreenContainer from '../../components/ScreenContainer';
 import { useAuth } from '../../context/AuthContext';
 import { sameProfileCity } from '../../utils/profileLocation';
@@ -9,7 +10,7 @@ import {
 } from '@react-navigation/bottom-tabs';
 import { CompositeScreenProps, useFocusEffect } from '@react-navigation/native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -101,6 +102,7 @@ export default function DiscoverScreen({ navigation }: Props) {
     toggleShortlist,
     isShortlisted,
     getInterestRelationship,
+    getOrCreateChatWith,
     receivedInterests,
     totalUnreadCount,
   } = useAppData();
@@ -117,7 +119,10 @@ export default function DiscoverScreen({ navigation }: Props) {
     visible: boolean;
     name: string;
     avatarUrl?: string | null;
+    isMutual?: boolean;
+    onStartChat?: () => void;
   }>({ visible: false, name: '' });
+  const submittingInterestsRef = useRef<Set<string>>(new Set());
   const [horoscopeTarget, setHoroscopeTarget] = useState<{
     profile: Profile;
     analysis: GeminiHoroscopeAnalysis;
@@ -144,7 +149,7 @@ export default function DiscoverScreen({ navigation }: Props) {
   const filteredProfiles = visibleProfiles.filter(p => {
     // 1. Completely hide people we are already connected/interacted with
     const rel = getInterestRelationship(p.id);
-    if (rel.status !== 'none') return false;
+    if (hasActiveDiscoveryRelationship(rel.status)) return false;
 
     // 2. Tab filters
     if (activeFilter === 'Vedic') {
@@ -246,6 +251,7 @@ export default function DiscoverScreen({ navigation }: Props) {
         <ScrollView
           horizontal
           showsHorizontalScrollIndicator={false}
+          scrollEventThrottle={1}
           contentContainerStyle={{ gap: 8, paddingHorizontal: 16 }}
         >
           <TouchableOpacity
@@ -389,15 +395,34 @@ export default function DiscoverScreen({ navigation }: Props) {
 
   const handleSendInterestAction = useCallback(
     async (item: Profile) => {
+      if (submittingInterestsRef.current.has(item.id)) return;
+      submittingInterestsRef.current.add(item.id);
       triggerHaptic('success');
       try {
         await sendInterest(item.id, item.userId);
+        const rel = getInterestRelationship(item.id);
+        const isMutual = rel.status === 'accepted';
         setCelebration({
           visible: true,
           name: item.name || 'your match',
           avatarUrl: item.photo || item.photos?.[0],
+          isMutual,
+          onStartChat: isMutual
+            ? async () => {
+                try {
+                  const chat = await getOrCreateChatWith(item.id);
+                  navigation.navigate('Chat', {
+                    chatId: chat.id,
+                    otherProfileId: item.id,
+                  });
+                } catch {
+                  navigation.navigate('Chats');
+                }
+              }
+            : undefined,
         });
       } catch (err: any) {
+        submittingInterestsRef.current.delete(item.id);
         if (isInterestQuotaError(err)) {
           Alert.alert(
             'Daily Interest Limit Reached',
@@ -416,7 +441,7 @@ export default function DiscoverScreen({ navigation }: Props) {
         }
       }
     },
-    [sendInterest, navigation],
+    [sendInterest, getInterestRelationship, getOrCreateChatWith, navigation],
   );
 
   const handleOpenHoroscope = useCallback(
@@ -496,6 +521,7 @@ export default function DiscoverScreen({ navigation }: Props) {
             snapToInterval={pageHeight || undefined}
             decelerationRate="fast"
             disableIntervalMomentum
+            scrollEventThrottle={1}
             getItemLayout={
               pageHeight > 0
                 ? (_, index) => ({
@@ -520,6 +546,11 @@ export default function DiscoverScreen({ navigation }: Props) {
         visible={celebration.visible}
         profileName={celebration.name}
         avatarUrl={celebration.avatarUrl}
+        currentUserAvatarUrl={
+          currentUser?.profile?.photo || currentUser?.profile?.photos?.[0]
+        }
+        isMutual={celebration.isMutual}
+        onStartChat={celebration.onStartChat}
         onClose={() => setCelebration({ visible: false, name: '' })}
       />
       {horoscopeTarget && (
@@ -564,11 +595,15 @@ const ProfileFeedCard = React.memo(({
 }) => {
   const translateX = useSharedValue(0);
   const cardOpacity = useSharedValue(1);
+  const enterTranslateY = useSharedValue(18);
+  const enterOpacity = useSharedValue(0);
 
   useEffect(() => {
     translateX.value = 0;
     cardOpacity.value = 1;
-  }, [profile.id, translateX, cardOpacity]);
+    enterTranslateY.value = withSpring(0, { damping: 20, stiffness: 220 });
+    enterOpacity.value = withTiming(1, { duration: 240 });
+  }, [profile.id, translateX, cardOpacity, enterTranslateY, enterOpacity]);
 
   const panGesture = Gesture.Pan()
     .activeOffsetX([-20, 20])
@@ -590,7 +625,7 @@ const ProfileFeedCard = React.memo(({
         });
         cardOpacity.value = withTiming(0, { duration: 220 });
       } else {
-        translateX.value = withSpring(0, { damping: 16, stiffness: 180 });
+        translateX.value = withSpring(0, { damping: 18, stiffness: 220 });
       }
     });
 
@@ -604,9 +639,10 @@ const ProfileFeedCard = React.memo(({
     return {
       transform: [
         { translateX: translateX.value },
+        { translateY: enterTranslateY.value },
         { rotate: `${rotate}deg` },
       ],
-      opacity: cardOpacity.value,
+      opacity: cardOpacity.value * enterOpacity.value,
     };
   });
 
@@ -764,6 +800,7 @@ const ProfileFeedCard = React.memo(({
             <ScrollView
               horizontal
               showsHorizontalScrollIndicator={false}
+              scrollEventThrottle={1}
               contentContainerStyle={styles.chipsContainer}
               style={styles.chipsScroll}
             >

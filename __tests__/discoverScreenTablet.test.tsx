@@ -21,6 +21,8 @@ jest.spyOn(Animated, 'timing').mockImplementation(() => ({
   reset: () => {},
 }));
 
+const mockRelationships: Record<string, string> = {};
+
 // Mock contexts and hooks
 jest.mock('../src/context/AppDataContext', () => ({
   useAppData: () => ({
@@ -68,7 +70,7 @@ jest.mock('../src/context/AppDataContext', () => ({
     interestStatusFor: jest.fn().mockReturnValue(undefined),
     getInterestRelationship: jest
       .fn()
-      .mockReturnValue({ status: 'none', isMutual: false }),
+      .mockImplementation((id: string) => ({ status: mockRelationships[id] ?? 'none', isMutual: false })),
     respondToInterest: jest.fn(),
     getOrCreateChatWith: jest.fn(),
     isLoadingProfiles: false,
@@ -217,4 +219,17 @@ describe('DiscoverScreen Tablet & Responsive Layout', () => {
     expect(flatList.props.numColumns).toBeUndefined();
     expect(flatList.props.columnWrapperStyle).toBeUndefined();
   });
+});
+
+test.each(['none', 'declined', 'withdrawn', 'cancelled'])('Discover displays an unconnected profile with %s history', async status => {
+  mockRelationships.prof_1 = status;
+  mockRelationships.prof_2 = 'accepted';
+  let tree!: ReactTestRenderer.ReactTestRenderer;
+  await ReactTestRenderer.act(async () => {
+    tree = ReactTestRenderer.create(<DiscoverScreen navigation={{ navigate: jest.fn() } as any} route={{} as any} />);
+  });
+  expect(tree.root.findByType(FlatList).props.data.map((item: any) => item.id)).toEqual(['prof_1']);
+  await ReactTestRenderer.act(async () => tree.unmount());
+  delete mockRelationships.prof_1;
+  delete mockRelationships.prof_2;
 });

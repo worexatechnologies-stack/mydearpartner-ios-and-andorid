@@ -1,4 +1,5 @@
 import AppErrorBoundary from './src/components/AppErrorBoundary';
+import AppUpdateGate from './src/components/AppUpdateGate';
 import MemberAgeBoundary from './src/components/MemberAgeBoundary';
 import { startNotificationRealtime } from './src/services/NotificationRealtimeService';
 import { colors } from './src/theme/theme';
@@ -10,16 +11,21 @@ import { colors } from './src/theme/theme';
  */
 
 import { DefaultTheme,NavigationContainer } from '@react-navigation/native';
-import React,{ useEffect } from 'react';
-import { StatusBar,StyleSheet } from 'react-native';
+import React,{ useEffect, useState } from 'react';
+import type { InitialState } from '@react-navigation/native';
+import { AppState, Linking, StatusBar,StyleSheet } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import InAppNotification from './src/components/InAppNotification';
+import OfflineBanner from './src/components/OfflineBanner';
 import { AppDataProvider } from './src/context/AppDataContext';
 import { AuthProvider,useAuth } from './src/context/AuthContext';
 import RootNavigator from './src/navigation/RootNavigator';
-import { navigationRef } from './src/navigation/navigationRef';
+import { consumePendingDeepLink, navigationRef, pendingDeepLink } from './src/navigation/navigationRef';
+import { loadResumeState, saveResumeState } from './src/navigation/resumeState';
+import SplashScreen from './src/screens/SplashScreen';
+import ProcessingScreen from './src/screens/ProcessingScreen';
 import { handleIncomingPush } from './src/services/IncomingPushService';
 import {
   ensureChannels,
@@ -29,6 +35,10 @@ import {
   setupNotifeeForegroundHandler,
 } from './src/services/PushNotificationService';
 import analyticsService from './src/services/analyticsService';
+import {
+  checkRatingEligibility,
+  recordFirstOpen,
+} from './src/utils/inAppRating';
 
 const customDefaultTheme = {
   ...DefaultTheme,
@@ -43,10 +53,19 @@ const customDefaultTheme = {
 };
 
 const linking = {
-  prefixes: ['mydearpartner://'],
+  prefixes: [
+    'mydearpartner://',
+    'https://mydearpartner.in',
+    'https://www.mydearpartner.in',
+  ],
   config: {
     screens: {
       ProfileDetail: 'profile/:profileId',
+      Chat: 'chat/:chatId/:otherProfileId',
+      Membership: 'membership',
+      Notifications: 'notifications',
+      Settings: 'settings',
+      Verification: 'verification',
     },
   },
 };
@@ -70,10 +89,69 @@ function SessionDataProvider({ children }: { children: React.ReactNode }) {
   return <AppDataProvider key={currentUser?.id ?? 'signed-out'}>{children}</AppDataProvider>;
 }
 
+export function SessionNavigation() {
+  const { currentUser, isLoading } = useAuth();
+  const accountId = currentUser?.profileComplete ? currentUser.id : null;
+  const identity = accountId ?? 'signed-out-or-setup';
+  const [restored, setRestored] = useState<{ identity: string; state?: InitialState }>();
+  const [splashComplete, setSplashComplete] = useState(false);
+
+  useEffect(() => {
+    if (isLoading) return;
+    let cancelled = false;
+    void (async () => {
+      let state: InitialState | undefined;
+      try {
+        const [url, saved] = await Promise.all([
+          Linking.getInitialURL(),
+          accountId ? loadResumeState(accountId) : Promise.resolve(undefined),
+        ]);
+        if (!url && !pendingDeepLink) state = saved;
+      } catch { /* A storage or linking failure must never prevent startup. */ }
+      if (!cancelled) setRestored({ identity, state });
+    })();
+    return () => { cancelled = true; };
+  }, [accountId, identity, isLoading]);
+
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', state => {
+      if (state !== 'active' && accountId && navigationRef.isReady()) {
+        void saveResumeState(accountId, navigationRef.getRootState());
+      }
+    });
+    return () => subscription.remove();
+  }, [accountId]);
+
+  if (!splashComplete) return <SplashScreen onComplete={() => setSplashComplete(true)} />;
+  if (isLoading || restored?.identity !== identity) return <ProcessingScreen />;
+  return (
+    <NavigationContainer
+      key={identity}
+      ref={navigationRef}
+      theme={customDefaultTheme}
+      linking={linking}
+      initialState={pendingDeepLink ? undefined : restored.state}
+      onReady={consumePendingDeepLink}
+      onStateChange={state => {
+        if (accountId) void saveResumeState(accountId, state);
+      }}
+    >
+      <RootNavigator skipSplash />
+    </NavigationContainer>
+  );
+}
+
 function App() {
   useEffect(() => {
     // Initialize analytics pipeline (tracks first_open once)
     analyticsService.init().catch(() => {});
+
+    // Record first open and evaluate in-app rating eligibility
+    recordFirstOpen()
+      .then(() => {
+        checkRatingEligibility().catch(() => {});
+      })
+      .catch(() => {});
 
     // Ensure system notification channels and permissions are ready
     ensureChannels().catch(err =>
@@ -143,20 +221,17 @@ function App() {
       <SafeAreaProvider>
         <StatusBar barStyle="dark-content" />
         <AppErrorBoundary>
+        <AppUpdateGate>
         <AuthProvider>
           <MemberAgeBoundary>
           <SessionDataProvider>
-            <NavigationContainer
-              ref={navigationRef}
-              theme={customDefaultTheme}
-              linking={linking}
-            >
-              <RootNavigator />
-            </NavigationContainer>
+            <SessionNavigation />
             <InAppNotification />
+            <OfflineBanner />
           </SessionDataProvider>
           </MemberAgeBoundary>
         </AuthProvider>
+        </AppUpdateGate>
         </AppErrorBoundary>
       </SafeAreaProvider>
     </GestureHandlerRootView>

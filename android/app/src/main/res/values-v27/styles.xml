@@ -1,0 +1,6 @@
+<resources>
+    <!-- Dark navigation icons became available in Android 8.1 (API 27). -->
+    <style name="SplashThemeBase" parent="SplashThemeLegacy">
+        <item name="android:windowLightNavigationBar">true</item>
+    </style>
+</resources>

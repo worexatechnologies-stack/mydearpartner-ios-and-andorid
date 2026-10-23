@@ -150,6 +150,12 @@ tasks.matching { it.name.contains("merge") && it.name.contains("NativeLibs") }.c
     doNotTrackState("Avoid Gradle 9 snapshotting issues on merged native libraries")
 }
 
+// A target change must regenerate JS even when all source files are unchanged.
+tasks.withType(com.facebook.react.tasks.BundleHermesCTask).configureEach {
+    inputs.property("mdpEnvironment", providers.environmentVariable("MDP_ENVIRONMENT").orElse("production"))
+    inputs.property("mdpStagingOrigin", providers.environmentVariable("MDP_STAGING_ORIGIN").orElse(""))
+}
+
 dependencies {
     // 1.14 adds Android 15 system-bar handling for date pickers and bottom sheets.
     implementation("com.google.android.material:material:1.14.0")

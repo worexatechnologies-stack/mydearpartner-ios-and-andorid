@@ -65,6 +65,10 @@ export function navigateToInterests() {
   navigate('Main', { screen: 'Interests' });
 }
 
+export function navigateToSavedSearch(savedSearchId: string) {
+  navigate('Main', { screen: 'Search', params: { savedSearchId } });
+}
+
 /**
  * Navigate to a specific user's full profile detail.
  */

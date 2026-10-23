@@ -3,6 +3,7 @@
  * performed by the app; the server creates the order and verifies the result.
  */
 import { MAX_RETRIES } from '../config/constants';
+import { BUILD_ENVIRONMENT } from '../config/env';
 import { get,post } from './apiClient';
 
 export type PaymentOrder = {
@@ -80,7 +81,7 @@ export async function createPaymentOrder(
       response.key_id ??
       response.razorpay_key_id ??
       response.key ??
-      RAZORPAY_PUBLIC_KEY_ID,
+      (BUILD_ENVIRONMENT === 'production' ? RAZORPAY_PUBLIC_KEY_ID : undefined),
     receipt: providerOrder.receipt ?? response.receipt,
   };
   if (
@@ -91,6 +92,9 @@ export async function createPaymentOrder(
   ) {
     
     throw new Error('The payment server returned an invalid order.');
+  }
+  if (BUILD_ENVIRONMENT === 'staging' && !/^rzp_test_[A-Za-z0-9]+$/.test(order.key_id)) {
+    throw new Error('Staging checkout requires a Razorpay sandbox key from the server.');
   }
   
   return order;

@@ -10,6 +10,7 @@ import {
   Alert,
   DeviceEventEmitter,
   FlatList,
+  Platform,
   ScrollView,
   RefreshControl,
   StyleSheet,
@@ -25,6 +26,7 @@ import EmptyState from '../../components/EmptyState';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { FLOATING_TAB_BAR_BOTTOM } from '../../navigation/tabBarLayout';
 import ScreenContainer from '../../components/ScreenContainer';
+import MotionView from '../../components/MotionView';
 import { SkeletonList } from '../../components/SkeletonCard';
 import UndoSnackbar, { UndoSnackbarRef } from '../../components/UndoSnackbar';
 import { useAppData } from '../../context/AppDataContext';
@@ -210,7 +212,7 @@ export default function InterestsScreen({ navigation }: Props) {
     };
   };
 
-  const renderMatchCard = (profile: any, item?: any, tabType?: Tab) => {
+  const renderMatchCard = (profile: any, item?: any, tabType?: Tab, index: number = 0) => {
     const isSaved = isShortlisted(profile.id);
     const status = item ? interestStatusFor(profile.id) : null;
 
@@ -408,13 +410,14 @@ export default function InterestsScreen({ navigation }: Props) {
 
     return (
       <View style={[styles.profilePage, { height: pageHeight }]}>
-        <TouchableOpacity
-          activeOpacity={0.95}
-          onPress={() =>
-            navigation.navigate('ProfileDetail', { profileId: profile.id })
-          }
-          style={styles.matchCard}
-        >
+        <MotionView index={index} replayKey={tabType} style={{ width: '100%', height: '100%' }}>
+          <TouchableOpacity
+            activeOpacity={0.95}
+            onPress={() =>
+              navigation.navigate('ProfileDetail', { profileId: profile.id })
+            }
+            style={styles.matchCard}
+          >
           <View style={styles.matchPhotoWrap}>
             <AuthImage
               source={{ uri: profile.photo || profile.photos?.[0] }}
@@ -480,6 +483,7 @@ export default function InterestsScreen({ navigation }: Props) {
             {bottomActions}
           </View>
         </TouchableOpacity>
+        </MotionView>
         <Text style={styles.nextHint}>Scroll down for next profile ↓</Text>
       </View>
     );
@@ -525,6 +529,7 @@ export default function InterestsScreen({ navigation }: Props) {
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
+        scrollEventThrottle={1}
         style={styles.tabsScroll}
         contentContainerStyle={styles.tabs}
       >
@@ -612,6 +617,10 @@ export default function InterestsScreen({ navigation }: Props) {
             snapToInterval={pageHeight || undefined}
             decelerationRate="fast"
             disableIntervalMomentum
+            scrollEventThrottle={1}
+            removeClippedSubviews={Platform.OS === 'android'}
+            maxToRenderPerBatch={4}
+            windowSize={5}
             getItemLayout={
               pageHeight > 0
                 ? (_, index) => ({
@@ -641,8 +650,8 @@ export default function InterestsScreen({ navigation }: Props) {
                 />
               )
             }
-            renderItem={({ item }) =>
-              renderMatchCard(item, null, 'shortlisted')
+            renderItem={({ item, index }) =>
+              renderMatchCard(item, null, 'shortlisted', index)
             }
           />
         ) : (
@@ -661,6 +670,10 @@ export default function InterestsScreen({ navigation }: Props) {
             snapToInterval={pageHeight || undefined}
             decelerationRate="fast"
             disableIntervalMomentum
+            scrollEventThrottle={1}
+            removeClippedSubviews={Platform.OS === 'android'}
+            maxToRenderPerBatch={4}
+            windowSize={5}
             getItemLayout={
               pageHeight > 0
                 ? (_, index) => ({
@@ -702,7 +715,7 @@ export default function InterestsScreen({ navigation }: Props) {
                 />
               )
             }
-            renderItem={({ item }) => {
+            renderItem={({ item, index }) => {
               const otherId =
                 tab === 'connected'
                   ? item.otherUserId
@@ -744,7 +757,7 @@ export default function InterestsScreen({ navigation }: Props) {
                     />
                   </View>
                 );
-              return renderMatchCard(displayProfile, item, tab);
+              return renderMatchCard(displayProfile, item, tab, index);
             }}
           />
         )}

@@ -210,7 +210,7 @@ export default function MyProfileScreen({ navigation }: Props) {
           [{ nativeEvent: { contentOffset: { y: scrollY } } }],
           { useNativeDriver: true },
         )}
-        scrollEventThrottle={16}
+        scrollEventThrottle={1}
       >
         {/* U11: Profile completion progress banner */}
         <ProfileCompletionBanner

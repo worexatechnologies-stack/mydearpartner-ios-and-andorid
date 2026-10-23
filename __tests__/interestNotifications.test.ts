@@ -79,3 +79,33 @@ test('supports websocket types and camelCase interest identifiers', () => {
   expect(interestEventKind({ interestId: 'id' })).toBe('interest_received');
   expect(interestEventKind({ type: 'chat_message' })).toBeNull();
 });
+
+test('saved-search realtime and push copies show one banner for the signed-in account', async () => {
+  const { getUserIds } = require('../src/utils/keychain');
+  getUserIds.mockResolvedValue({ memberId: 'me' });
+  const data = { notification_type: 'SAVED_SEARCH_MATCH', notification_id: 'saved-alert-dupe', receiver_id: 'me',
+    url: '/search?saved_search=aaaa1111-2222-3333-4444-555555555555' };
+  await Promise.all([handleIncomingPush({ data }, true), handleIncomingPush({ data }, true)]);
+  expect(showInAppNotification).toHaveBeenCalledTimes(1);
+  expect(showInAppNotification).toHaveBeenCalledWith(expect.objectContaining({ type: 'system', onPress: expect.any(Function) }));
+  expect(handleIncomingMessagePush).not.toHaveBeenCalled();
+  expect(displayNotification).not.toHaveBeenCalled();
+});
+
+test('saved-search alerts addressed to an earlier account are ignored', async () => {
+  const { getUserIds } = require('../src/utils/keychain');
+  getUserIds.mockResolvedValue({ memberId: 'me' });
+  await handleIncomingPush({ data: { notification_type: 'SAVED_SEARCH_MATCH', notification_id: 'old-account', receiver_id: 'other' } }, true);
+  expect(showInAppNotification).not.toHaveBeenCalled();
+  expect(displayNotification).not.toHaveBeenCalled();
+});
+
+test('system-rendered saved-search alerts do not create a second notification', async () => {
+  const { getUserIds } = require('../src/utils/keychain');
+  getUserIds.mockResolvedValue({ memberId: 'me' });
+  await handleIncomingPush({ notification: { title: 'New matching profiles' }, data: {
+    notification_type: 'SAVED_SEARCH_MATCH', notification_id: 'saved-system', receiver_id: 'me',
+  } }, false);
+  expect(showInAppNotification).not.toHaveBeenCalled();
+  expect(displayNotification).not.toHaveBeenCalled();
+});

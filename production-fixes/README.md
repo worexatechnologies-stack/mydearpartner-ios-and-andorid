@@ -1,4 +1,22 @@
-# Production chat notification fix
+# Production repairs
+
+The latest combined repair is [platform-hardening.patch](platform-hardening.patch).
+Read [its scope, validation and application instructions](PLATFORM_HARDENING.md).
+It includes the two earlier patches; do not stack them on top of it.
+
+## Unconnected profile visibility
+
+[Search/Discover visibility repair](UNCONNECTED_DISCOVERY.md) fixes historical
+relationships hiding removed connections. Its backend patch applies after the
+combined platform repair and requires no new migration.
+
+## New saved-search feature
+
+[Saved searches and optional alerts](SAVED_SEARCH_ALERTS.md) are implemented in the
+mobile app. Apply [saved-search-alerts.patch](saved-search-alerts.patch) after the
+combined repair for its backend migration, scheduled alerts and website links.
+
+## Earlier chat notification fix
 
 Prepared against production website/backend repository commit
 `170514b2d56214b7e0a63982e7519df8e2d14422`:

@@ -1,4 +1,3 @@
-import { deliveryLabel } from '../utils/messageDelivery';
 function isRemovedMatch(error: unknown): boolean {
   const value = error as { code?: string; message?: string } | null;
   return value?.code === 'match_removed' || value?.message === 'This match has been removed.';
@@ -10,10 +9,10 @@ import React,{ useCallback,useEffect,useLayoutEffect,useRef,useState } from 'rea
 import TypingIndicator from '../components/TypingIndicator';
 import QuickReplyBar from '../components/QuickReplyBar';
 import {
-
-Alert,
-AppState,
-DeviceEventEmitter,
+  Alert,
+  Animated,
+  AppState,
+  DeviceEventEmitter,
 FlatList,
 Keyboard,
 KeyboardAvoidingView,
@@ -41,6 +40,8 @@ import SafetyCenter from '../components/SafetyCenter';
 import { useAppData } from '../context/AppDataContext';
 import { useAuth } from '../context/AuthContext';
 import { RootStackParamList } from '../navigation/types';
+import { usePersistentDraft } from '../hooks/usePersistentDraft';
+import { accountStorageKey } from '../utils/storage';
 import { subscribeToPresence } from '../services/PresenceService';
 import { Message } from '../types/models';
 import { parseStickerMessage } from '../utils/chatContent';
@@ -48,6 +49,8 @@ import { triggerHaptic } from '../utils/haptics';
 import { usePlanAllowance } from '../utils/planAllowance';
 import analyticsService from '../services/analyticsService';
 import AnimatedButton from '../components/AnimatedButton';
+import { recordConversation } from '../utils/inAppRating';
+import { useReducedMotion } from '../hooks/useReducedMotion';
 
 const EMOJI_CATEGORIES = [
   {
@@ -168,6 +171,92 @@ function formatBubbleTime(ts: number): string {
   return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 }
 
+function renderDeliveryStatusIcon(status?: Message['deliveryStatus']) {
+  switch (status) {
+    case 'sending':
+      return <Icon name="time-outline" size={12} color="rgba(255,255,255,0.7)" style={{ marginLeft: 4 }} />;
+    case 'read':
+      return <Icon name="checkmark-done" size={14} color="#67E8F9" style={{ marginLeft: 4 }} />;
+    case 'delivered':
+      return <Icon name="checkmark-done" size={14} color="rgba(255,255,255,0.85)" style={{ marginLeft: 4 }} />;
+    case 'failed':
+      return <Icon name="alert-circle" size={12} color="#FEE2E2" style={{ marginLeft: 4 }} />;
+    case 'unconfirmed':
+      return <Icon name="help-circle-outline" size={12} color="rgba(255,255,255,0.7)" style={{ marginLeft: 4 }} />;
+    case 'sent':
+    default:
+      return <Icon name="checkmark" size={13} color="rgba(255,255,255,0.85)" style={{ marginLeft: 4 }} />;
+  }
+}
+
+function AnimatedDeliveryStatusIcon({ status }: { status?: Message['deliveryStatus'] }) {
+  const reduced = useReducedMotion();
+  const scale = useRef(new Animated.Value(reduced ? 1 : 0.7)).current;
+  const opacity = useRef(new Animated.Value(reduced ? 1 : 0.4)).current;
+
+  useEffect(() => {
+    if (reduced) return;
+    scale.setValue(0.7);
+    opacity.setValue(0.4);
+    Animated.parallel([
+      Animated.spring(scale, {
+        toValue: 1,
+        friction: 6,
+        tension: 90,
+        useNativeDriver: true,
+      }),
+      Animated.timing(opacity, {
+        toValue: 1,
+        duration: 160,
+        useNativeDriver: true,
+      }),
+    ]).start();
+  }, [status, reduced, scale, opacity]);
+
+  return (
+    <Animated.View style={{ transform: [{ scale }], opacity }}>
+      {renderDeliveryStatusIcon(status)}
+    </Animated.View>
+  );
+}
+
+function AnimatedMessageRow({ children, isMine }: { children: React.ReactNode; isMine: boolean }) {
+  const reduced = useReducedMotion();
+  const enterAnim = useRef(new Animated.Value(reduced ? 1 : 0)).current;
+
+  useEffect(() => {
+    if (reduced) {
+      enterAnim.setValue(1);
+      return;
+    }
+    Animated.timing(enterAnim, {
+      toValue: 1,
+      duration: 180,
+      useNativeDriver: true,
+    }).start();
+  }, [reduced, enterAnim]);
+
+  const translateY = enterAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: [6, 0],
+  });
+
+  return (
+    <Animated.View
+      style={[
+        styles.messageRow,
+        isMine ? styles.rowMine : styles.rowTheirs,
+        {
+          opacity: enterAnim,
+          transform: [{ translateY }],
+        },
+      ]}
+    >
+      {children}
+    </Animated.View>
+  );
+}
+
 function formatDaySeparator(ts: number): string {
   const d = new Date(ts);
   const now = new Date();
@@ -192,6 +281,8 @@ export default function ChatScreen({ route, navigation, embedded = false }: Prop
   const { chatId, otherProfileId, fallbackName, fallbackPhoto } = route.params;
   const {
     chats,
+    getInterestRelationship,
+    cancelInterest,
     getProfileById,
     getMessagesForChat,
     sendMessage,
@@ -210,7 +301,14 @@ export default function ChatScreen({ route, navigation, embedded = false }: Prop
   } = useAppData();
   const { currentUser } = useAuth();
   const { isPremium } = usePlanAllowance();
-  const [text, setText] = useState('');
+  const [draft, setDraft] = usePersistentDraft(
+    currentUser?.id ? accountStorageKey(`@mdp/chat-draft-v1:${encodeURIComponent(chatId)}`, currentUser.id) : null,
+    { text: '' },
+  );
+  const text = draft.text;
+  const setText = (action: React.SetStateAction<string>) => setDraft(previous => ({
+    text: typeof action === 'function' ? action(previous.text) : action,
+  }));
   const [sending, setSending] = useState(false);
   const [partnerTyping, setPartnerTyping] = useState(false);
   const [composerPanel, setComposerPanel] = useState<ComposerPanel>(null);
@@ -274,7 +372,18 @@ export default function ChatScreen({ route, navigation, embedded = false }: Prop
   // Is this person/conversation muted?
   const isMuted = isUserMuted(otherProfileId) || isUserMuted(chatId);
   // Either side blocked = disable chat
-  const connectionClosed = matchRemoved || !!chats?.find(chat => String(chat.id) === String(chatId))?.connectionClosed;
+  const currentChat = chats?.find(chat => String(chat.id) === String(chatId));
+  const relationship = getInterestRelationship?.(otherProfileId);
+  const previousClosed = useRef(currentChat?.connectionClosed);
+  useEffect(() => {
+    if (previousClosed.current === true && currentChat?.connectionClosed === false) {
+      setMatchRemoved(false);
+      setMessageError(null);
+    }
+    previousClosed.current = currentChat?.connectionClosed;
+  }, [currentChat?.connectionClosed, chatId]);
+  useEffect(() => { setMatchRemoved(false); }, [chatId]);
+  const connectionClosed = matchRemoved || !!currentChat?.connectionClosed;
   const chatDisabled = iBlocked || blockedByThem || connectionClosed || !isPremium;
   useEffect(() => {
     if (connectionClosed) {
@@ -435,6 +544,7 @@ export default function ChatScreen({ route, navigation, embedded = false }: Prop
       else await sendMessage(chatId, toSend, otherProfileId);
       if (isFirstMessage) {
         analyticsService.trackConversationStarted().catch(() => {});
+        recordConversation().catch(() => {});
       }
     } catch (err: any) {
       if (restoreTextOnFailure && !err?.localMessageId) setText(toSend);
@@ -589,7 +699,7 @@ export default function ChatScreen({ route, navigation, embedded = false }: Prop
         </TouchableOpacity>
 
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-          <TouchableOpacity style={[styles.headerAction, iBlocked && { backgroundColor: 'rgba(239, 68, 68, 0.2)', borderRadius: 20 }]} onPress={handleMenuPress} activeOpacity={0.8}>
+          <TouchableOpacity accessibilityRole="button" accessibilityLabel="Chat options" style={[styles.headerAction, iBlocked && { backgroundColor: 'rgba(239, 68, 68, 0.2)', borderRadius: 20 }]} onPress={handleMenuPress} activeOpacity={0.8}>
             <Icon name={iBlocked ? 'ban' : 'ellipsis-vertical'} size={22} color={iBlocked ? '#EF4444' : '#FFF'} />
           </TouchableOpacity>
           <TouchableOpacity style={styles.headerAction} onPress={() => navigation.navigate('ProfileDetail', { profileId: otherProfileId })} activeOpacity={0.8}>
@@ -603,6 +713,23 @@ export default function ChatScreen({ route, navigation, embedded = false }: Prop
           <View style={[styles.menuOverlay, { paddingTop: insets.top + 48 }]}>
             <TouchableWithoutFeedback>
               <View style={styles.menuCard}>
+                {!connectionClosed && relationship?.status === 'accepted' && relationship.activeInterest && (
+                  <TouchableOpacity accessibilityRole="button" accessibilityLabel="Unconnect" style={styles.menuItem} onPress={() => {
+                    setShowMenu(false);
+                    Alert.alert('Unconnect?', `Remove your connection with ${displayName}?`, [
+                      { text: 'Cancel', style: 'cancel' },
+                      { text: 'Unconnect', style: 'destructive', onPress: async () => {
+                        try {
+                          await cancelInterest(relationship.activeInterest!.id);
+                        } catch (error: any) {
+                          Alert.alert('Could not unconnect', error?.message ?? 'Please try again.');
+                        }
+                      } },
+                    ]);
+                  }}>
+                    <Text style={styles.menuItemText}>Unconnect</Text>
+                  </TouchableOpacity>
+                )}
                 <TouchableOpacity style={styles.menuItem} onPress={() => { setShowMenu(false); setReportTarget({ profileId: otherProfileId, chatId }); }}>
                   <Text style={styles.menuItemText}>Report conversation</Text>
                 </TouchableOpacity>
@@ -725,7 +852,7 @@ export default function ChatScreen({ route, navigation, embedded = false }: Prop
               const { contentOffset, contentSize, layoutMeasurement } = event.nativeEvent;
               nearBottomRef.current = contentSize.height - contentOffset.y - layoutMeasurement.height < 80;
             }}
-            scrollEventThrottle={16}
+            scrollEventThrottle={1}
             onContentSizeChange={() => { if (nearBottomRef.current) listRef.current?.scrollToEnd({ animated: false }); }}
             onLayout={() => { if (nearBottomRef.current) listRef.current?.scrollToEnd({ animated: false }); }}
             showsVerticalScrollIndicator={false}
@@ -769,7 +896,7 @@ export default function ChatScreen({ route, navigation, embedded = false }: Prop
               const sticker = parseStickerMessage(msgText);
 
               return (
-                <View style={[styles.messageRow, isMine ? styles.rowMine : styles.rowTheirs]}>
+                <AnimatedMessageRow isMine={isMine}>
                   {!isMine && (
                     <View style={styles.avatarSlot}>
                       {showAvatar && displayPhoto ? (
@@ -796,10 +923,9 @@ export default function ChatScreen({ route, navigation, embedded = false }: Prop
                         <Text style={isMine ? styles.textMine : styles.textTheirs}>{msgText}</Text>
                       )}
                       {isMine ? (
-                        <View style={[styles.timeRow, { flexWrap: 'wrap' }]}>
+                        <View style={[styles.timeRow, { alignItems: 'center' }]}>
                           <Text style={[styles.bubbleTime, sticker && styles.stickerTimeMine]}>{formatBubbleTime(msg.createdAt)}</Text>
-                          <Text accessibilityLabel={`Message status: ${deliveryLabel(msg)}`} style={[styles.bubbleTime, styles.deliveryText]}>{deliveryLabel(msg)}</Text>
-
+                          <AnimatedDeliveryStatusIcon status={msg.deliveryStatus} />
                         </View>
                       ) : (
                         <Text style={[styles.bubbleTime, styles.bubbleTimeTheirs, sticker && styles.stickerTimeTheirs]}>{formatBubbleTime(msg.createdAt)}</Text>
@@ -830,7 +956,7 @@ export default function ChatScreen({ route, navigation, embedded = false }: Prop
                       )}
                     </View>
                   </View>
-                </View>
+                </AnimatedMessageRow>
               );
             }}
           />

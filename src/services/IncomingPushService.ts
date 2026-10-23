@@ -9,6 +9,11 @@ notifyInterest,
 } from './InterestNotificationService';
 import { handleIncomingMessagePush } from './MessageNotificationService';
 import { displayNotification } from './PushNotificationService';
+import { savedSearchIdFromNotification } from '../utils/savedSearchNotification';
+import { navigateToSavedSearch } from '../navigation/navigationRef';
+import { showInAppNotification } from '../utils/notifications';
+
+const savedAlertDisplays = new Map<string, number>();
 
 function value(data: any, key: string): string | undefined {
   const candidate = data?.[key];
@@ -48,6 +53,29 @@ export async function handleIncomingPush(
     return;
   }
   const notifTitle = (remoteMessage?.notification?.title ?? '').toLowerCase();
+  if (String(data.notification_type ?? kind).toUpperCase() === 'SAVED_SEARCH_MATCH') {
+    const userIds = await getUserIds().catch(() => null);
+    const accountId = userIds?.memberId ?? userIds?.profileId;
+    if (!accountId || (data.receiver_id && data.receiver_id !== userIds?.memberId && data.receiver_id !== userIds?.profileId)) return;
+    DeviceEventEmitter.emit('REFRESH_SAVED_SEARCH_ALERTS');
+    const searchId = savedSearchIdFromNotification(data);
+    const alertId = data.notification_id ?? data.id ?? remoteMessage?.messageId;
+    if (alertId) {
+      const key = `${accountId}:${alertId}`;
+      const now = Date.now();
+      if (savedAlertDisplays.has(key) && now - savedAlertDisplays.get(key)! < 60000) return;
+      savedAlertDisplays.set(key, now);
+      if (savedAlertDisplays.size > 200) savedAlertDisplays.delete(savedAlertDisplays.keys().next().value!);
+    }
+    if (!systemRendered) {
+      if (isForeground) showInAppNotification({
+        title: 'New matching profiles', message: 'Open your saved search to see new matches.',
+        type: 'system', icon: 'bookmark', onPress: searchId ? () => navigateToSavedSearch(searchId) : undefined,
+      });
+      else await displayNotification('New matching profiles', 'Open your saved search to see new matches.', data, alertId);
+    }
+    return;
+  }
   const notifBody = (remoteMessage?.notification?.body ?? '').toLowerCase();
 
   const hasChatData =

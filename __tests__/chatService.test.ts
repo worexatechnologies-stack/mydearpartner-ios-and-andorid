@@ -66,3 +66,14 @@ test('older page errors retain an error instead of pretending history ended', as
   await expect(getMessagePage('chat', 'me', 'partner', `${API_BASE_URL}/conversations/partner/messages/?page=2`)).rejects.toMatchObject({ status: 404 });
   expect(get).toHaveBeenCalledTimes(1);
 });
+
+test('preserves the server connection status for conversations', async () => {
+  (get as jest.Mock).mockResolvedValueOnce([
+    { id: 'ended', partner_id: 'partner', connection_closed: true },
+    { id: 'active', partner_id: 'other', connection_closed: false },
+  ]);
+  await expect(getChats('me')).resolves.toEqual([
+    expect.objectContaining({ id: 'ended', connectionClosed: true }),
+    expect.objectContaining({ id: 'active', connectionClosed: false }),
+  ]);
+});

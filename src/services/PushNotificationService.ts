@@ -15,7 +15,9 @@ import {
 navigateToChat,
 navigateToInterests,
 navigateToProfile,
+navigateToSavedSearch,
 } from '../navigation/navigationRef';
+import { savedSearchIdFromNotification } from '../utils/savedSearchNotification';
 
 let _deviceToken: string | null = null;
 let _registrationStatus: 'unknown' | 'registered' | 'failed' = 'unknown';
@@ -67,6 +69,8 @@ export async function ensureChannels(): Promise<void> {
  */
 export function handleNotificationPress(data?: any) {
   if (!data || data.kind === 'session_replaced' || data.type === 'session_replaced') return;
+  const savedSearchId = savedSearchIdFromNotification(data);
+  if (savedSearchId) { navigateToSavedSearch(savedSearchId); return; }
 
   const conversationId =
     data.conversation_id || data.conversationId || data.chat_id;
@@ -314,10 +318,25 @@ export async function displayNotification(
         .map(([key, value]) => [key, String(value)]),
     );
 
+    const convId =
+      safeData.conversation_id ||
+      safeData.conversationId ||
+      safeData.chat_id ||
+      safeData.chatId;
+
+    const isGenericPlaceholder =
+      (title === 'New Message' || title === '💬 MyDearPartner' || title === 'MyDearPartner') &&
+      (body.toLowerCase().includes('you have a new message') || body.toLowerCase().includes('new message'));
+
+    // Suppress generic placeholder if a rich notification for this chat was already displayed
+    if (isGenericPlaceholder && convId && recentDisplayMap.has(`chat:${convId}`)) {
+      return true;
+    }
+
     // Deduplication guard: Prevent identical notification from triggering twice
     const dedupeKey =
       (typeof id === 'string' && id.trim().length > 0 ? id.trim() : null) ||
-      `${safeData.kind || 'alert'}:${safeData.message_id || safeData.interest_id || safeData.chat_id || title}:${body}`;
+      `${safeData.kind || 'alert'}:${convId || safeData.message_id || safeData.interest_id || title}:${body}`;
 
     const now = Date.now();
     const lastDisplay = recentDisplayMap.get(dedupeKey);
@@ -325,6 +344,9 @@ export async function displayNotification(
       return true;
     }
     recentDisplayMap.set(dedupeKey, now);
+    if (convId && !isGenericPlaceholder) {
+      recentDisplayMap.set(`chat:${convId}`, now);
+    }
 
     if (recentDisplayMap.size > 100) {
       for (const [k, time] of recentDisplayMap.entries()) {
@@ -347,6 +369,35 @@ export async function displayNotification(
       (safeData.kind?.includes('interest') || safeData.interest_id
         ? CHANNEL_ID_INTERESTS
         : CHANNEL_ID_MESSAGES);
+
+    // Cancel generic placeholder notifications ("New Message" / "You have a new message")
+    // or older notifications from the same chat so duplicate cards never stack in the tray
+    if (!isGenericPlaceholder && targetChannel === CHANNEL_ID_MESSAGES) {
+      try {
+        const displayed = await notifee.getDisplayedNotifications();
+        for (const item of displayed) {
+          const itemTitle = (item.notification?.title || '').trim().toLowerCase();
+          const itemBody = (item.notification?.body || '').trim().toLowerCase();
+          const itemData = item.notification?.data || {};
+          const itemConvId =
+            itemData.conversation_id ||
+            itemData.conversationId ||
+            itemData.chat_id ||
+            itemData.chatId;
+          const isItemGeneric =
+            (itemTitle === 'new message' || itemTitle.includes('mydearpartner')) &&
+            itemBody.includes('new message');
+          const isSameChat = convId && itemConvId && String(convId) === String(itemConvId);
+          if (isItemGeneric || isSameChat) {
+            if (item.id && item.id !== (id || `chat_${convId}`)) {
+              await notifee.cancelNotification(item.id);
+            }
+          }
+        }
+      } catch {
+        // Best-effort cleanup
+      }
+    }
 
     const notificationConfig: any = {
       title,
@@ -372,8 +423,17 @@ export async function displayNotification(
       },
     };
 
-    if (typeof id === 'string' && id.trim().length > 0) {
-      notificationConfig.id = id;
+    const finalId =
+      (typeof id === 'string' && id.trim().length > 0 ? id.trim() : null) ||
+      (convId ? `chat_${convId}` : undefined);
+
+    if (finalId) {
+      notificationConfig.id = finalId;
+    }
+
+    if (convId) {
+      notificationConfig.android.tag = `chat_${convId}`;
+      notificationConfig.android.groupId = `group_${convId}`;
     }
 
     await notifee.displayNotification(notificationConfig);

@@ -10,7 +10,9 @@ import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import React, { useCallback, useMemo, useState } from 'react';
 import {
   Alert,
+  Animated,
   FlatList,
+  Platform,
   RefreshControl,
   ScrollView,
   StyleSheet,
@@ -28,6 +30,7 @@ import EmptyState from '../../components/EmptyState';
 import LoadingState from '../../components/LoadingState';
 import PageHeading from '../../components/PageHeading';
 import ScreenContainer from '../../components/ScreenContainer';
+import MotionView from '../../components/MotionView';
 import { useAppData } from '../../context/AppDataContext';
 import { useAuth } from '../../context/AuthContext';
 import { MainTabParamList, RootStackParamList } from '../../navigation/types';
@@ -310,6 +313,7 @@ function ConversationList({ navigation, onOpenChat, selectedId }: Props & {
           <ScrollView
             horizontal
             showsHorizontalScrollIndicator={false}
+            scrollEventThrottle={1}
             style={styles.matchScroll}
           >
             {newMatches.map(profile => (
@@ -379,6 +383,11 @@ function ConversationList({ navigation, onOpenChat, selectedId }: Props & {
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
         keyboardDismissMode="on-drag"
+        removeClippedSubviews={Platform.OS === 'android'}
+        maxToRenderPerBatch={10}
+        initialNumToRender={8}
+        windowSize={7}
+        scrollEventThrottle={1}
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
@@ -414,7 +423,7 @@ function ConversationList({ navigation, onOpenChat, selectedId }: Props & {
             />
           )
         }
-        renderItem={({ item }) => {
+        renderItem={({ item, index }) => {
           const otherId = getOtherParticipantId(item);
           // If the profile is in the app-wide cache (which has correctly formatted photos from /profiles/), use it.
           // Otherwise, fallback to the profile object provided by the /conversations/ API.
@@ -427,6 +436,7 @@ function ConversationList({ navigation, onOpenChat, selectedId }: Props & {
             (otherId ? isUserMuted(otherId) : false);
           const hasUnread = (item.unreadCount ?? 0) > 0;
           const preview = (() => {
+            if (item.connectionClosed) return 'Connection ended';
             const rawPreview = getChatContentPreview(item.lastMessage);
             if (!rawPreview) return 'Say hello';
             if (
@@ -447,16 +457,17 @@ function ConversationList({ navigation, onOpenChat, selectedId }: Props & {
           })();
 
           return (
-            <ChatRow
-              item={item}
-              profile={profile}
-              otherId={otherId!}
-              hasUnread={hasUnread}
-              isMuted={isMuted}
-              preview={preview}
-              selected={selectedId === item.id}
-              formatTime={formatTime}
-              onPress={() => {
+            <MotionView index={index} style={{ width: '100%' }}>
+              <ChatRow
+                item={item}
+                profile={profile}
+                otherId={otherId!}
+                hasUnread={hasUnread}
+                isMuted={isMuted}
+                preview={preview}
+                selected={selectedId === item.id}
+                formatTime={formatTime}
+                onPress={() => {
                 if (!isPremium) {
                   Alert.alert(
                     'Premium Required',
@@ -477,6 +488,7 @@ function ConversationList({ navigation, onOpenChat, selectedId }: Props & {
                 else navigation.navigate('Chat', params);
               }}
             />
+            </MotionView>
           );
         }}
       />
@@ -557,15 +569,15 @@ function ChatRow({
         </Text>
       </View>
 
-      {/* Arrow or Unread Badge */}
+      {/* Arrow or Animated Unread Badge */}
       {hasUnread ? (
-        <View style={styles.unreadBadge}>
+        <Animated.View style={styles.unreadBadge}>
           <Text style={styles.unreadBadgeText}>
             {(item.unreadCount ?? 0) > 10
               ? '10+'
               : String(item.unreadCount ?? 0)}
           </Text>
-        </View>
+        </Animated.View>
       ) : (
         <Text style={styles.rowArrow}>›</Text>
       )}

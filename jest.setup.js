@@ -95,6 +95,8 @@ jest.mock('react-native-reanimated', () => {
     },
     interpolate: jest.fn((val, inR, outR) => outR[0]),
     Extrapolation: { CLAMP: 'clamp', EXTEND: 'extend', IDENTITY: 'identity' },
+    useAnimatedProps: jest.fn(() => ({})),
+    cancelAnimation: jest.fn(),
     useEvent: jest.fn(() => jest.fn()),
     useHandler: jest.fn(() => ({})),
     default: {

@@ -14,14 +14,15 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Keychain from 'react-native-keychain';
 import { KEYCHAIN_SERVICE } from '../config/constants';
+import { SESSION_STORAGE_SUFFIX } from '../config/env';
 
 export interface StoredCredentials {
   accessToken: string;
   refreshToken: string | null;
 }
 
-const FALLBACK_KEY = '@auth_tokens_fallback';
-const LOGGED_OUT_KEY = '@mdp/session_logged_out';
+const FALLBACK_KEY = `@auth_tokens_fallback${SESSION_STORAGE_SUFFIX}`;
+const LOGGED_OUT_KEY = `@mdp/session_logged_out${SESSION_STORAGE_SUFFIX}`;
 let tokenWriteQueue: Promise<void> = Promise.resolve();
 
 function writeTokensSerially(write: () => Promise<void>): Promise<void> {
@@ -29,7 +30,7 @@ function writeTokensSerially(write: () => Promise<void>): Promise<void> {
   tokenWriteQueue = result.catch(() => {});
   return result;
 }
-const USER_IDS_KEY = '@mdp/user_ids';
+const USER_IDS_KEY = `@mdp/user_ids${SESSION_STORAGE_SUFFIX}`;
 const MESSAGING_IDENTITY_SERVICE = `${KEYCHAIN_SERVICE}.messaging-identity`;
 
 export let currentAccessToken: string | null = null;
@@ -57,7 +58,7 @@ export async function saveTokens(
     currentAccessToken = accessToken;
     await AsyncStorage.removeItem(FALLBACK_KEY);
     await AsyncStorage.removeItem(LOGGED_OUT_KEY);
-    await AsyncStorage.removeItem('@mdp/session_replaced_notice');
+    await AsyncStorage.removeItem(`@mdp/session_replaced_notice${SESSION_STORAGE_SUFFIX}`);
   });
 }
 
@@ -153,8 +154,12 @@ export async function clearTokensForSession(expected: StoredCredentials): Promis
   await writeTokensSerially(async () => {
     const result = await Keychain.getGenericPassword({ service: KEYCHAIN_SERVICE });
     if (!result) return;
-    const actual = JSON.parse(result.password);
-    if (actual.accessToken !== expected.accessToken || actual.refreshToken !== expected.refreshToken) return;
+    try {
+      const actual = JSON.parse(result.password);
+      if (actual.accessToken !== expected.accessToken || actual.refreshToken !== expected.refreshToken) return;
+    } catch {
+      return;
+    }
     await deleteStoredTokens();
     await deleteStoredUserIds();
     cleared = true;

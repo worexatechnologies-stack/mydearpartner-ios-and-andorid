@@ -1,11 +1,14 @@
 import React from 'react';
 import Renderer, { act } from 'react-test-renderer';
-import { StyleSheet, View, ScrollView, TouchableOpacity } from 'react-native';
+import { Alert, Text, StyleSheet, View, ScrollView, TouchableOpacity } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import ProfileDetailScreen from '../src/screens/ProfileDetailScreen';
 import ScreenContainer from '../src/components/ScreenContainer';
 import AnimatedButton from '../src/components/AnimatedButton';
 
+const mockCancelInterest = jest.fn().mockResolvedValue(undefined);
+let mockCurrentUser: any = null;
+let mockRelationship: any = { status: 'none', isMutual: false };
 let mockDimensions = { width: 320, height: 568, scale: 1, fontScale: 1 };
 jest.mock('react-native/Libraries/Utilities/useWindowDimensions', () => ({
   default: () => mockDimensions,
@@ -19,17 +22,19 @@ jest.mock('../src/components/SafetyCenter', () => () => null);
 jest.mock('../src/components/CompatibilityBreakdownModal', () => () => null);
 jest.mock('../src/components/GeminiHoroscopeModal', () => () => null);
 jest.mock('../src/api/profileService', () => ({ getProfileById: jest.fn() }));
-jest.mock('../src/context/AuthContext', () => ({ useAuth: () => ({ currentUser: null }) }));
+jest.mock('../src/context/AuthContext', () => ({ useAuth: () => ({ currentUser: mockCurrentUser }) }));
 jest.mock('../src/context/AppDataContext', () => {
   const profile = {
     id: 'profile', userId: 'other', name: 'A very long profile name for a narrow phone',
+    email: 'hidden@example.com', mobileNumber: '9876543210',
     age: 24, city: 'Harohalli', state: 'Karnataka', photo: 'https://example.com/photo.jpg',
     education: 'Master of Business Administration', profession: 'Software Engineer',
     photos: ['https://example.com/photo.jpg'],
   };
   return { useAppData: () => ({
     getProfileById: () => profile,
-    getInterestRelationship: () => ({ status: 'none', isMutual: false }),
+    getInterestRelationship: () => mockRelationship,
+    cancelInterest: mockCancelInterest,
     interestStatusFor: () => undefined,
     isBlockedByMe: () => false,
   }) };
@@ -66,9 +71,10 @@ it.each([
   const banner = root.findAllByType(TouchableOpacity).find(node => node.props.accessibilityLabel === 'View compatibility breakdown')!;
   expect(styleOf(banner).flexDirection).toBe(availableWidth < 360 || fontScale > 1.2 ? 'column' : 'row');
   const actions = root.findAllByType(AnimatedButton);
-  expect(actions).toHaveLength(2);
-  expect(styleOf(actions[1]).height).toBeUndefined();
-  expect(styleOf(actions[1]).minHeight).toBe(48);
+  expect(actions).toHaveLength(3);
+  const primaryAction = actions[actions.length - 1];
+  expect(styleOf(primaryAction).height).toBeUndefined();
+  expect(styleOf(primaryAction).minHeight).toBe(48);
   await act(async () => tree.unmount());
 });
 
@@ -94,4 +100,43 @@ it('preserves full photos and gives each carousel page the explicit measured hei
   const carousel = tree.root.findAllByType(ScrollView).find(node => node.props.pagingEnabled)!;
   expect(StyleSheet.flatten(carousel.props.contentContainerStyle).height).toBe(styleOf(updated).height);
   await act(async () => tree.unmount());
+});
+
+
+it('opens Unconnect from Connected and returns to Connect after removal', async () => {
+  const accepted = { id: 'match', status: 'accepted' };
+  mockRelationship = { status: 'accepted', isMutual: true, activeInterest: accepted };
+  const alert = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
+  let tree!: Renderer.ReactTestRenderer;
+  await act(async () => { tree = Renderer.create(<ProfileDetailScreen {...props} />); });
+  const connected = tree.root.findAllByType(AnimatedButton).find(button =>
+    button.findAllByType(Text).some(text => text.props.children === 'Connected'))!;
+  await act(async () => { connected.props.onPress(); });
+  const actions = alert.mock.calls[alert.mock.calls.length - 1][2]!;
+  await act(async () => { await actions.find(action => action.text === 'Unconnect')!.onPress!(); });
+  expect(mockCancelInterest).toHaveBeenCalledWith('match');
+  mockRelationship = { status: 'none', isMutual: false };
+  await act(async () => { tree.update(<ProfileDetailScreen {...props} />); });
+  expect(tree.root.findAllByType(Text).some(text => text.props.children === 'Connect')).toBe(true);
+  await act(async () => tree.unmount());
+  alert.mockRestore();
+});
+
+it.each([false, true])('never displays contact details in a profile (self preview: %s)', async self => {
+  mockCurrentUser = self ? { id: 'other', email: 'hidden@example.com', profile: { id: 'profile' } } : null;
+  mockRelationship = { status: 'accepted', isMutual: true };
+  let tree!: Renderer.ReactTestRenderer;
+  try {
+    await act(async () => { tree = Renderer.create(<ProfileDetailScreen {...props} />); });
+    const content = tree.root.findAllByType(Text).map(node => node.props.children).flat().join(' ');
+    expect(content).not.toContain('Contact & Account Details');
+    expect(content).not.toContain('Email / Gmail');
+    expect(content).not.toContain('Mobile Number');
+    expect(content).not.toContain('hidden@example.com');
+    expect(content).not.toContain('9876543210');
+  } finally {
+    await act(async () => tree?.unmount());
+    mockCurrentUser = null;
+    mockRelationship = { status: 'none', isMutual: false };
+  }
 });

@@ -9,7 +9,7 @@ export type AuthStackParamList = {
 
 export type MainTabParamList = {
   Discover: undefined;
-  Search: { openFilters?: boolean } | undefined;
+  Search: { openFilters?: boolean; savedSearchId?: string } | undefined;
   Interests: undefined;
   Chats: undefined;
   MyProfile: undefined;

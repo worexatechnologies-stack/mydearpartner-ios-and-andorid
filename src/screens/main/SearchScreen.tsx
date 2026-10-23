@@ -1,3 +1,4 @@
+import { hasActiveDiscoveryRelationship } from '../../utils/discoveryFilters';
 import ScreenContainer from '../../components/ScreenContainer';
 import { useSearchGrid } from '../../hooks/useSearchGrid';
 import { sameProfileCity } from '../../utils/profileLocation';
@@ -19,6 +20,7 @@ import {
   Animated,
   FlatList,
   Modal,
+  Platform,
   RefreshControl,
   ScrollView,
   StatusBar,
@@ -50,6 +52,8 @@ import {
   GeminiHoroscopeAnalysis,
 } from '../../services/geminiHoroscopeService';
 import GeminiHoroscopeModal from '../../components/GeminiHoroscopeModal';
+import SavedSearchControls from '../../components/SavedSearchControls';
+import { SavedSearch, SavedSearchFilters, savedSearchFilterKey, savedSearchService } from '../../api/savedSearchService';
 
 type Props = CompositeScreenProps<
   BottomTabScreenProps<MainTabParamList, 'Search'>,
@@ -369,6 +373,46 @@ const ProfileGridCard = React.memo(function ProfileGridCard({
   );
 });
 
+function FilterPill({
+  item,
+  selected,
+  onSelect,
+}: {
+  item: string;
+  selected: boolean;
+  onSelect: () => void;
+}) {
+  const scale = useRef(new Animated.Value(1)).current;
+  const pressIn = () =>
+    Animated.spring(scale, {
+      toValue: 0.94,
+      useNativeDriver: true,
+      speed: 40,
+    }).start();
+  const pressOut = () =>
+    Animated.spring(scale, {
+      toValue: 1,
+      useNativeDriver: true,
+      speed: 40,
+    }).start();
+
+  return (
+    <Animated.View style={{ transform: [{ scale }] }}>
+      <TouchableOpacity
+        style={[styles.fPill, selected && styles.fPillActive]}
+        onPress={onSelect}
+        onPressIn={pressIn}
+        onPressOut={pressOut}
+        activeOpacity={0.85}
+      >
+        <Text style={[styles.fPillText, selected && styles.fPillTextActive]}>
+          {item}
+        </Text>
+      </TouchableOpacity>
+    </Animated.View>
+  );
+}
+
 function FilterSection({
   label,
   data,
@@ -386,23 +430,16 @@ function FilterSection({
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
+        scrollEventThrottle={1}
         contentContainerStyle={{ gap: 8, paddingRight: 8 }}
       >
         {data.map(item => (
-          <TouchableOpacity
+          <FilterPill
             key={item}
-            style={[styles.fPill, value === item && styles.fPillActive]}
-            onPress={() => onSelect(item)}
-          >
-            <Text
-              style={[
-                styles.fPillText,
-                value === item && styles.fPillTextActive,
-              ]}
-            >
-              {item}
-            </Text>
-          </TouchableOpacity>
+            item={item}
+            selected={value === item}
+            onSelect={() => onSelect(item)}
+          />
         ))}
       </ScrollView>
     </View>
@@ -429,7 +466,8 @@ export default function SearchScreen({ navigation, route }: Props) {
   const insets = useSafeAreaInsets();
   const tabBarHeight = useBottomTabBarHeight();
   const [searchQuery, setSearchQuery] = useState('');
-  const search = useProfileSearch(searchQuery, currentUser?.id ?? '');
+  const [activeSavedSearch, setActiveSavedSearch] = useState<SavedSearch | null>(null);
+  const search = useProfileSearch(searchQuery, currentUser?.id ?? '', activeSavedSearch?.id);
   const [selectedPrompt, setSelectedPrompt] = useState<string | null>(null);
   const [horoscopeTarget, setHoroscopeTarget] = useState<{
     profile: Profile;
@@ -443,6 +481,7 @@ export default function SearchScreen({ navigation, route }: Props) {
     [],
   );
 
+  const [isSearchFocused, setIsSearchFocused] = useState(false);
   const [showFiltersModal, setShowFiltersModal] = useState(false);
   useFocusEffect(
     useCallback(() => {
@@ -461,6 +500,60 @@ export default function SearchScreen({ navigation, route }: Props) {
   const [filterEducation, setFilterEducation] = useState('All');
   const [filterProfession, setFilterProfession] = useState('All');
   const [verifiedOnly, setVerifiedOnly] = useState(false);
+
+  const savedFilters: SavedSearchFilters = {
+    ...(searchQuery.trim() ? { query: searchQuery.trim() } : {}),
+    ...(filterCity !== 'All' ? { city: filterCity } : {}),
+    ...(filterReligion !== 'All' ? { religion: filterReligion } : {}),
+    ...(filterLanguage !== 'All' ? { mother_tongue: filterLanguage } : {}),
+    ...(filterMaritalStatus !== 'All' ? { marital_status: filterMaritalStatus } : {}),
+    ...(filterEducation !== 'All' ? { education: filterEducation } : {}),
+    ...(filterProfession !== 'All' ? { profession: filterProfession } : {}),
+    ...(verifiedOnly ? { verified_only: true } : {}),
+  };
+  const savedFiltersKey = savedSearchFilterKey(savedFilters);
+  const applySavedSearch = useCallback((saved: SavedSearch) => {
+    setSearchQuery(saved.filters.query ?? '');
+    setSelectedPrompt(null);
+    setFilterCity(saved.filters.city ?? 'All');
+    setFilterReligion(saved.filters.religion ?? 'All');
+    setFilterLanguage(saved.filters.mother_tongue ?? 'All');
+    setFilterMaritalStatus(saved.filters.marital_status ?? 'All');
+    setFilterEducation(saved.filters.education ?? 'All');
+    setFilterProfession(saved.filters.profession ?? 'All');
+    setVerifiedOnly(saved.filters.verified_only === true);
+    setActiveSavedSearch(saved);
+  }, []);
+  useEffect(() => {
+    if (activeSavedSearch && (selectedPrompt || savedFiltersKey !== savedSearchFilterKey(activeSavedSearch.filters))) {
+      setActiveSavedSearch(null);
+    }
+  }, [activeSavedSearch, selectedPrompt, savedFiltersKey]);
+  useEffect(() => {
+    setActiveSavedSearch(null);
+    setSearchQuery('');
+    setSelectedPrompt(null);
+    setFilterCity('All');
+    setFilterReligion('All');
+    setFilterLanguage('All');
+    setFilterMaritalStatus('All');
+    setFilterEducation('All');
+    setFilterProfession('All');
+    setVerifiedOnly(false);
+  }, [currentUser?.id]);
+  useEffect(() => {
+    const id = route?.params?.savedSearchId;
+    if (!id || !currentUser?.id) return;
+    let active = true;
+    savedSearchService.get(id).then(saved => {
+      if (active) applySavedSearch(saved);
+    }).catch(() => {
+      if (active) Alert.alert('Search unavailable', 'This saved search may have been deleted or could not be loaded.');
+    }).finally(() => {
+      if (active) navigation.setParams({ savedSearchId: undefined });
+    });
+    return () => { active = false; };
+  }, [route?.params?.savedSearchId, currentUser?.id, applySavedSearch, navigation]);
 
   useFocusEffect(
     useCallback(() => {
@@ -728,7 +821,7 @@ export default function SearchScreen({ navigation, route }: Props) {
 
   const sourceProfiles = useMemo(() => {
     return search.profiles.filter(
-      p => getInterestRelationship(p.id).status === 'none',
+      p => !hasActiveDiscoveryRelationship(getInterestRelationship(p.id).status),
     );
   }, [search.profiles, getInterestRelationship]);
 
@@ -892,16 +985,22 @@ export default function SearchScreen({ navigation, route }: Props) {
           </View>
         </View>
 
-        {/* Simple Search input */}
-        <View style={styles.searchBox}>
+        {/* Simple Search input with animated focus ring */}
+        <View style={[styles.searchBox, isSearchFocused && styles.searchBoxFocused]}>
           <View style={styles.searchRow}>
-            <Icon name="search" size={20} color="#94A3B8" />
+            <Icon
+              name="search"
+              size={20}
+              color={isSearchFocused ? colors.action : '#94A3B8'}
+            />
             <TextInput
               style={styles.searchInput}
               placeholder="Name, city or community"
               placeholderTextColor="#94A3B8"
               value={searchQuery}
               onChangeText={setSearchQuery}
+              onFocus={() => setIsSearchFocused(true)}
+              onBlur={() => setIsSearchFocused(false)}
               returnKeyType="search"
               selectionColor={colors.primary}
             />
@@ -934,6 +1033,9 @@ export default function SearchScreen({ navigation, route }: Props) {
             </TouchableOpacity>
           </View>
         </View>
+        <SavedSearchControls accountId={currentUser?.id ?? ''} filters={savedFilters}
+          quickSuggestionActive={Boolean(selectedPrompt)} onApply={applySavedSearch}
+          onRemove={id => setActiveSavedSearch(saved => saved?.id === id ? null : saved)} />
       </View>
 
       {/* ── Body ──────────────────────────────────────────────────────────── */}
@@ -942,6 +1044,7 @@ export default function SearchScreen({ navigation, route }: Props) {
         <ScrollView
           horizontal
           showsHorizontalScrollIndicator={false}
+          scrollEventThrottle={1}
           contentContainerStyle={styles.chipsRow}
         >
           {QUICK_PROMPTS.map(p => {
@@ -976,6 +1079,7 @@ export default function SearchScreen({ navigation, route }: Props) {
             <ScrollView
               horizontal
               showsHorizontalScrollIndicator={false}
+              scrollEventThrottle={1}
               contentContainerStyle={{ gap: 8, alignItems: 'center' }}
             >
               <Text style={styles.activeLabel}>Active:</Text>
@@ -1185,6 +1289,12 @@ export default function SearchScreen({ navigation, route }: Props) {
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
         keyboardDismissMode="on-drag"
+        removeClippedSubviews={Platform.OS === 'android'}
+        maxToRenderPerBatch={8}
+        updateCellsBatchingPeriod={50}
+        initialNumToRender={6}
+        windowSize={7}
+        scrollEventThrottle={1}
         ListHeaderComponent={ListHeader}
         refreshControl={
           <RefreshControl
@@ -1231,6 +1341,7 @@ export default function SearchScreen({ navigation, route }: Props) {
               <TouchableOpacity
                 style={styles.emptyResetBtn}
                 onPress={resetAllFilters}
+                activeOpacity={0.85}
               >
                 <Text style={styles.emptyResetText}>Reset All Filters</Text>
               </TouchableOpacity>
@@ -1274,6 +1385,7 @@ export default function SearchScreen({ navigation, route }: Props) {
                 </View>
                 <ScrollView
                   showsVerticalScrollIndicator={false}
+                  scrollEventThrottle={1}
                   contentContainerStyle={styles.sheetBody}
                 >
                   <FilterSection
@@ -1424,6 +1536,14 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFFFFF',
     borderWidth: 1,
     borderColor: colors.roseBorder,
+  },
+  searchBoxFocused: {
+    borderColor: colors.action,
+    shadowColor: colors.action,
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.18,
+    shadowRadius: 8,
+    elevation: 4,
   },
   searchRow: {
     minHeight: 54,

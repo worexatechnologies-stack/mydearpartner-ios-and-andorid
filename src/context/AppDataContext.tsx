@@ -1,3 +1,4 @@
+import { activeDiscoveryMemberIds } from '../utils/discoveryFilters';
 import { failureDelivery, restoreMessageDelivery } from '../utils/messageDelivery';
 import { useLatestCallback } from '../hooks/useLatestCallback';
 import { fetchInterestSnapshot } from '../services/InterestSyncService';
@@ -32,7 +33,7 @@ useMemo,
 useRef,
 useState,
 } from 'react';
-import { Alert,AppState,DeviceEventEmitter } from 'react-native';
+import { AppState, DeviceEventEmitter } from 'react-native';
 import {
 Chat,
 FilterOptions,
@@ -427,56 +428,13 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
         );
 
         if (revision !== discoverRevision.current) return;
-        // Collect IDs of connected/contacted profiles
-        const connectedIds = new Set<string>();
-        const fullyConnectedIds = new Set<string>(); // Users to completely remove
-
-        // 1. Active/existing chats
-        (chatsRef.current || chats).forEach(chat => {
-          if (chat.otherProfile?.id) {
-            connectedIds.add(String(chat.otherProfile.id));
-            fullyConnectedIds.add(String(chat.otherProfile.id));
-          }
-          if (chat.otherProfile?.userId) {
-            connectedIds.add(String(chat.otherProfile.userId));
-            fullyConnectedIds.add(String(chat.otherProfile.userId));
-          }
-          if (chat.participantIds) {
-            chat.participantIds.forEach(pId => {
-              if (pId !== myId && pId !== myMemberId) {
-                connectedIds.add(String(pId));
-                fullyConnectedIds.add(String(pId));
-              }
-            });
-          }
-        });
-
-        // 2. All interests (sent, received, accepted, declined)
-        interests.forEach(i => {
-          const toAdd = [
-            i.toUserId,
-            i.fromUserId,
-            i.receiverProfile?.id,
-            i.receiverProfile?.userId,
-            i.senderProfile?.id,
-            i.senderProfile?.userId,
-          ];
-          toAdd.forEach(id => {
-            if (
-              id &&
-              String(id) !== String(myId) &&
-              String(id) !== String(myMemberId)
-            ) {
-              connectedIds.add(String(id));
-            }
-          });
-        });
+        // Chat history survives removal. Only live interests establish a connection.
+        const connectedIds = activeDiscoveryMemberIds(interestsRef.current, [myId, myMemberId].filter((id): id is string => Boolean(id)));
 
         // 3. Blocked users
         const strictlyBlockedIds = new Set<string>();
         blockedIds.forEach(bId => {
           connectedIds.add(String(bId));
-          fullyConnectedIds.add(String(bId));
           strictlyBlockedIds.add(String(bId));
         });
 
@@ -645,6 +603,26 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
           merged.push(r);
         }
       });
+      // Reconcile both participants' chat state only from a complete snapshot.
+      if (snapshot.sent && snapshot.received) {
+        const updatedChats = chatsRef.current.map(chat => {
+          const ids = [chat.otherProfile?.id, chat.otherProfile?.userId,
+            ...chat.participantIds.filter(id => id !== myId && id !== myMemberId)];
+          const matches = (item: Interest) => [item.fromUserId, item.toUserId,
+            item.senderProfile?.id, item.senderProfile?.userId,
+            item.receiverProfile?.id, item.receiverProfile?.userId,
+          ].some(id => id && id !== myId && id !== myMemberId && ids.includes(id));
+          const accepted = merged.some(item => item.status === 'accepted' && matches(item));
+          const ended = merged.some(item => item.status === 'declined' && matches(item))
+            || interestsRef.current.some(item => item.status === 'accepted' && matches(item));
+          return accepted ? { ...chat, connectionClosed: false }
+            : ended ? { ...chat, connectionClosed: true } : chat;
+        });
+        chatsRef.current = updatedChats;
+        setChats(updatedChats);
+        if (myIdRef.current) persistChats(updatedChats, myIdRef.current);
+      }
+      interestsRef.current = merged;
       setInterests(merged);
       if (myIdRef.current) {
         persistInterests({ sent, received, merged }, myIdRef.current);
@@ -704,10 +682,30 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
         return newChat;
       } catch (err: any) {
         console.warn('[AppData] getOrCreateChatWith error:', err?.message);
+        const isNotFound =
+          err?.status === 404 ||
+          err?.message?.toLowerCase().includes('not found') ||
+          err?.message?.toLowerCase().includes('no longer exists');
+        if (isNotFound) {
+          const fallbackChat: Chat = {
+            id: `chat_${otherProfileId}`,
+            otherProfile: profile || ({
+              id: otherProfileId,
+              name: 'Match',
+            } as any),
+            unreadCount: 0,
+            participantIds: [myId || 'me', otherUserId || otherProfileId],
+          };
+          setChats(prev => {
+            const alreadyExists = prev.some(c => c.id === fallbackChat.id);
+            return alreadyExists ? prev : [...prev, fallbackChat];
+          });
+          return fallbackChat;
+        }
         throw err;
       }
     },
-    [chats, cryptoMyId, getProfileById],
+    [chats, cryptoMyId, getProfileById, myId],
   );
 
   const getSentInterestTo = useCallback(
@@ -726,7 +724,8 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
         );
       };
 
-      const fromSent = sentInterestsList.find(isTarget);
+      const fromSent = sentInterestsList.find(i => isTarget(i) && ['accepted', 'pending'].includes(i.status))
+        || sentInterestsList.find(isTarget);
       if (fromSent) return fromSent;
 
       return interests.find(i => {
@@ -756,7 +755,8 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
         );
       };
 
-      const fromReceived = receivedInterestsList.find(isSource);
+      const fromReceived = receivedInterestsList.find(i => isSource(i) && ['accepted', 'pending'].includes(i.status))
+        || receivedInterestsList.find(isSource);
       if (fromReceived) return fromReceived;
 
       return interests.find(i => {
@@ -778,14 +778,7 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
       const isAcceptedMatch =
         sent?.status === 'accepted' || received?.status === 'accepted';
 
-      const isMutual =
-        isAcceptedMatch ||
-        Boolean(
-          sent &&
-            received &&
-            sent.status !== 'declined' &&
-            received.status !== 'declined',
-        );
+      const isMutual = isAcceptedMatch;
 
       let status: InterestRelationship['status'] = 'none';
       if (isAcceptedMatch || isMutual) {
@@ -1027,28 +1020,54 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
     interestRevision.current += 1;
     try {
       const isReceiver = interest.toUserId === myId || interest.toUserId === myMemberId;
-      if (isReceiver) await InterestService.respondToInterest(interestId, 'declined');
-      else if (interest.status === 'accepted') await InterestService.removeConnection(interestId);
-      else await InterestService.cancelInterest(interestId);
-      setInterests(prev => prev.filter(item => item.id !== interestId));
-      setSentInterestsList(prev => prev.filter(item => item.id !== interestId));
-      setReceivedInterestsList(prev => prev.filter(item => item.id !== interestId));
+      const partnerProfile = isReceiver ? interest.senderProfile : interest.receiverProfile;
+      const partnerIds = new Set([
+        isReceiver ? interest.fromUserId : interest.toUserId,
+        partnerProfile?.id, partnerProfile?.userId,
+      ].filter((id): id is string => Boolean(id)));
+      const matchesPartner = (item: Interest) => [item.fromUserId, item.toUserId,
+        item.senderProfile?.id, item.senderProfile?.userId,
+        item.receiverProfile?.id, item.receiverProfile?.userId,
+      ].some(id => id && partnerIds.has(id));
+      // Mutual connections can have a request in each direction. Close both so
+      // neither the server refresh nor the profile can retain an accepted row.
+      const related = interest.status === 'accepted'
+        ? Array.from(new Map([...interests, ...sentInterestsList, ...receivedInterestsList]
+          .filter(item => matchesPartner(item) && ['pending', 'accepted'].includes(item.status))
+          .map(item => [item.id, item])).values())
+        : [interest];
+      for (const item of related) {
+        const received = item.toUserId === myId || item.toUserId === myMemberId;
+        if (received) await InterestService.respondToInterest(item.id, 'declined');
+        else if (item.status === 'accepted') await InterestService.removeConnection(item.id);
+        else await InterestService.cancelInterest(item.id);
+      }
+      const removedIds = new Set(related.map(item => item.id));
+      const keep = (item: Interest) => !removedIds.has(item.id);
+      const merged = interests.filter(keep);
+      const sent = sentInterestsList.filter(keep);
+      const received = receivedInterestsList.filter(keep);
+      interestsRef.current = merged;
+      setInterests(merged);
+      setSentInterestsList(sent);
+      setReceivedInterestsList(received);
+      if (myId) persistInterests({ sent, received, merged }, myId);
+      discoverRevision.current += 1;
       if (interest.status === 'accepted') {
-        const partnerIds = [isReceiver ? interest.fromUserId : interest.toUserId,
-          isReceiver ? interest.senderProfile?.id : interest.receiverProfile?.id,
-          isReceiver ? interest.senderProfile?.userId : interest.receiverProfile?.userId].filter(Boolean);
         const closed = chatsRef.current.map(chat =>
-          partnerIds.some(id => chat.participantIds.includes(id!) || chat.otherProfile?.id === id || chat.otherProfile?.userId === id)
+          Array.from(partnerIds).some(id => chat.participantIds.includes(id) || chat.otherProfile?.id === id || chat.otherProfile?.userId === id)
             ? { ...chat, connectionClosed: true } : chat);
         chatsRef.current = closed;
         setChats(closed);
+        if (myId) persistChats(closed, myId);
         DeviceEventEmitter.emit('REFRESH_CHATS');
         DeviceEventEmitter.emit('REFRESH_INTERESTS');
       }
     } finally {
       pendingInterestActions.current.delete(interestId);
     }
-  }, [interests, sentInterestsList, receivedInterestsList, myId, myMemberId]);
+    await loadDiscoverProfiles();
+  }, [interests, sentInterestsList, receivedInterestsList, myId, myMemberId, loadDiscoverProfiles]);
 
   // ─── Chats ───────────────────────────────────────────────────────────────
   const loadChats = useLatestCallback(async () => {
@@ -1063,7 +1082,8 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
       const data = await ChatService.getChats(effectiveId);
       
       const updatedChats = data.map(chat => ({ ...chat,
-        connectionClosed: chatsRef.current.find(previous => previous.id === chat.id)?.connectionClosed,
+        connectionClosed: chatsRef.current.find(previous => previous.id === chat.id)?.connectionClosed
+          ?? chat.connectionClosed,
       }));
       setChats(updatedChats);
       if (myIdRef.current) {
@@ -1542,21 +1562,13 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
         await InterestService.toggleShortlistApi(profileId);
         // Sync in background — no await so there's no UI flicker/stall
         loadShortlists().catch(() => {});
-      } catch {
-        setShortlist(shortlist);
-        if (myId) {
-          await setItem(
-            accountStorageKey(StorageKeys.SHORTLIST, myId),
-            shortlist,
-          );
-        }
-        Alert.alert(
-          'Could not save',
-          'Your shortlist was not changed. Please try again.',
+      } catch (err: any) {
+        console.warn(
+          '[AppData] Backend shortlist sync failed, keeping local bookmark:',
+          err?.message,
         );
-        return;
       }
-      await loadShortlists();
+      await loadShortlists().catch(() => {});
     },
     [shortlist, loadShortlists, myId],
   );
@@ -1633,6 +1645,13 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
   const refreshInterests = useCallback(async () => {
     await loadInterests();
   }, [loadInterests]);
+
+  const discoveryRelationshipKey = interests
+    .filter(item => item.status === 'pending' || item.status === 'accepted')
+    .map(item => `${item.id}:${item.status}`).sort().join('|');
+  useEffect(() => {
+    if (currentUser) loadDiscoverProfiles();
+  }, [discoveryRelationshipKey, currentUser?.id, loadDiscoverProfiles]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const refreshChats = useCallback(async () => {
     await loadChats();

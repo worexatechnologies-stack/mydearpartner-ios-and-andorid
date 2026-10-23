@@ -7,21 +7,21 @@
     </style>
 
     <!-- Splash screen theme shown before React Native loads -->
-    <style name="SplashThemeBase" parent="Theme.AppCompat.Light.NoActionBar">
+    <style name="SplashThemeLegacy" parent="Theme.AppCompat.Light.NoActionBar">
         <item name="android:windowBackground">@drawable/splash_screen</item>
         <item name="android:windowNoTitle">true</item>
         <item name="android:windowFullscreen">false</item>
         <item name="android:windowContentOverlay">@null</item>
         <item name="android:windowLightStatusBar">true</item>
-        <item name="android:windowLightNavigationBar">true</item>
     </style>
+
+    <style name="SplashThemeBase" parent="SplashThemeLegacy" />
 
     <!-- System bar colors are supported only on Android 14 and earlier. -->
     <style name="SplashTheme" parent="SplashThemeBase">
         <item name="android:statusBarColor">#FAF8F7</item>
         <item name="android:navigationBarColor">#FAF8F7</item>
         <item name="android:windowLightStatusBar">true</item>
-        <item name="android:windowLightNavigationBar">true</item>
     </style>
 
 </resources>

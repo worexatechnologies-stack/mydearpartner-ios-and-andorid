@@ -8,6 +8,8 @@ import { useAuth } from '../context/AuthContext';
 import { colors,fontSizes,radii,spacing } from '../theme/theme';
 import { Gender } from '../types/models';
 import analyticsService from '../services/analyticsService';
+import { usePersistentDraft } from '../hooks/usePersistentDraft';
+import { accountStorageKey } from '../utils/storage';
 
 const genderOptions: { label: string; value: Gender }[] = [
   { label: 'Male', value: 'male' },
@@ -19,15 +21,25 @@ export default function ProfileSetupScreen() {
   const { completeProfile, currentUser } = useAuth();
   const profile = currentUser?.profile;
 
-  const [name, setName] = useState(profile?.name || '');
-  const [age, setAge] = useState(profile?.age ? profile.age.toString() : '');
-  const [gender, setGender] = useState<Gender>(profile?.gender || 'female');
-  const [city, setCity] = useState(profile?.city || '');
-  const [religion, setReligion] = useState(profile?.religion || '');
-  const [profession, setProfession] = useState(profile?.profession || '');
-  const [education, setEducation] = useState(profile?.education || '');
-  const [height, setHeight] = useState(profile?.height || '');
-  const [about, setAbout] = useState(profile?.about || '');
+  const [draft, setDraft, clearDraft, draftReady] = usePersistentDraft(
+    currentUser?.id ? accountStorageKey('@mdp/setup-draft-v1', currentUser.id) : null,
+    {
+      name: profile?.name || '',
+      age: profile?.age ? profile.age.toString() : '',
+      gender: profile?.gender || 'female',
+      city: profile?.city || '',
+      religion: profile?.religion || '',
+      profession: profile?.profession || '',
+      education: profile?.education || '',
+      height: profile?.height || '',
+      about: profile?.about || '',
+    },
+  );
+  const { name, age, city, religion, profession, education, height, about } = draft;
+  const gender: Gender = ['male', 'female', 'other'].includes(draft.gender)
+    ? draft.gender as Gender : 'female';
+  const changeField = (field: keyof typeof draft) => (value: string) =>
+    setDraft(previous => ({ ...previous, [field]: value }));
   const [photoUri, setPhotoUri] = useState<string | null>(null);
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
   const [error, setError] = useState('');
@@ -61,6 +73,7 @@ export default function ProfileSetupScreen() {
   };
 
   const onSubmit = async () => {
+    if (!draftReady) return;
     setError('');
     const finalName = name.trim();
     const validAge = Number(age.trim());
@@ -93,6 +106,7 @@ export default function ProfileSetupScreen() {
         photo: photoUri || profile?.photo || '',
         interests: [],
       });
+      await clearDraft();
       analyticsService.trackProfileComplete({ completion_version: 'v1' }).catch(() => {});
     } catch (err: any) {
       console.warn('[ProfileSetupScreen] onSubmit error:', err);
@@ -147,14 +161,14 @@ export default function ProfileSetupScreen() {
           label="Full Name"
           placeholder="Your name"
           value={name}
-          onChangeText={setName}
+          onChangeText={changeField('name')}
         />
         <AppTextInput
           label="Age"
           placeholder="e.g. 28"
           keyboardType="number-pad"
           value={age}
-          onChangeText={setAge}
+          onChangeText={changeField('age')}
         />
 
         <Text style={styles.label}>Gender</Text>
@@ -168,7 +182,7 @@ export default function ProfileSetupScreen() {
                   styles.genderSelector,
                   isSelected && styles.genderSelectorSelected,
                 ]}
-                onPress={() => setGender(option.value)}
+                onPress={() => changeField('gender')(option.value)}
                 activeOpacity={0.8}
               >
                 <Text
@@ -188,7 +202,7 @@ export default function ProfileSetupScreen() {
           label="City"
           placeholder="e.g. Bengaluru"
           value={city}
-          onChangeText={setCity}
+          onChangeText={changeField('city')}
         />
         <AppTextInput
           label="State"
@@ -200,25 +214,25 @@ export default function ProfileSetupScreen() {
           label="Religion"
           placeholder="e.g. Hindu"
           value={religion}
-          onChangeText={setReligion}
+          onChangeText={changeField('religion')}
         />
         <AppTextInput
           label="Profession"
           placeholder="e.g. Software Engineer"
           value={profession}
-          onChangeText={setProfession}
+          onChangeText={changeField('profession')}
         />
         <AppTextInput
           label="Education"
           placeholder="e.g. B.Tech"
           value={education}
-          onChangeText={setEducation}
+          onChangeText={changeField('education')}
         />
         <AppTextInput
           label="Height"
           placeholder="e.g. 5'6&quot;"
           value={height}
-          onChangeText={setHeight}
+          onChangeText={changeField('height')}
         />
         <AppTextInput
           label="About You"
@@ -227,11 +241,12 @@ export default function ProfileSetupScreen() {
           numberOfLines={4}
           style={styles.about}
           value={about}
-          onChangeText={setAbout}
+          onChangeText={changeField('about')}
         />
 
         {error ? <Text style={styles.error}>{error}</Text> : null}
         <AppButton
+          disabled={!draftReady}
           title="Save & Continue"
           onPress={onSubmit}
           loading={loading}

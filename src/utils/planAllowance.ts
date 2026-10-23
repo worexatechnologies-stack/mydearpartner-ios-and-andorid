@@ -1,4 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { SESSION_STORAGE_SUFFIX } from '../config/env';
 import { useCallback,useEffect,useState } from 'react';
 import {
 BackendMembershipPlan,
@@ -74,7 +75,7 @@ function publishUsage(accountId: string, change: Partial<Usage>) {
 }
 function storageKey(prefix: string, accountId: string) {
   if (!accountId) throw new Error('Sign in to access your allowance.');
-  return `${prefix}${usageKey(accountId)}`;
+  return `${prefix}${usageKey(accountId)}${SESSION_STORAGE_SUFFIX}`;
 }
 
 export async function isDailyInterestsExhaustedToday(accountId: string): Promise<boolean> {
@@ -87,10 +88,14 @@ export async function markDailyInterestsExhausted(exhausted: boolean, accountId:
   else await AsyncStorage.removeItem(key);
 }
 async function readIds(prefix: string, accountId: string): Promise<string[]> {
-  const raw = await AsyncStorage.getItem(storageKey(prefix, accountId));
-  if (!raw) return [];
-  const parsed = JSON.parse(raw);
-  return Array.isArray(parsed) ? parsed : [];
+  try {
+    const raw = await AsyncStorage.getItem(storageKey(prefix, accountId));
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
 }
 // Serialize read/modify/write operations so rapid actions cannot lose usage.
 const writes = new Map<string, Promise<unknown>>();

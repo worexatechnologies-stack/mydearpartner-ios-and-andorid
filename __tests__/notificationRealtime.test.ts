@@ -68,3 +68,12 @@ test('incomplete chat refresh events do not generate undeduplicated alerts', asy
   await handleRealtimeNotification({ type: 'chat.message', data: { conversation_id: 'chat-1' } });
   expect(handleIncomingPush).not.toHaveBeenCalled();
 });
+
+test('saved-search events preserve the alert ID and link for shared deduplication', async () => {
+  await handleRealtimeNotification({ type: 'notification.created', id: 'alert-1', notification_type: 'SAVED_SEARCH_MATCH',
+    link_url: '/search?saved_search=aaaa1111-2222-3333-4444-555555555555' });
+  expect(handleIncomingPush).toHaveBeenCalledWith({ messageId: 'alert-1', data: expect.objectContaining({
+    notification_type: 'SAVED_SEARCH_MATCH', notification_id: 'alert-1', link_url: expect.stringContaining('saved_search='),
+  }) }, true);
+  expect(notifyInterest).not.toHaveBeenCalled();
+});

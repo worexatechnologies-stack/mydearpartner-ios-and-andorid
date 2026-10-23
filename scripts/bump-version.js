@@ -13,6 +13,14 @@ parts[2] += 1; // bump patch
 const newVersion = parts.join('.');
 pkg.version = newVersion;
 fs.writeFileSync(packageJsonPath, JSON.stringify(pkg, null, 2) + '\n');
+// Keep the npm lockfile's release metadata in sync with package.json.
+const lockPath = path.join(__dirname, '../package-lock.json');
+if (fs.existsSync(lockPath)) {
+  const lock = JSON.parse(fs.readFileSync(lockPath, 'utf8'));
+  lock.version = newVersion;
+  if (lock.packages && lock.packages['']) lock.packages[''].version = newVersion;
+  fs.writeFileSync(lockPath, JSON.stringify(lock, null, 2) + '\n');
+}
 console.log(`✅ Bumped package.json version to ${newVersion}`);
 
 // 2. Bump Android build.gradle

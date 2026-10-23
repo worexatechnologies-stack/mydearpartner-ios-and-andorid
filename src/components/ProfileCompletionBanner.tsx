@@ -4,12 +4,13 @@
  * Shows a progress bar + call-to-action when the user's profile is <85% complete.
  * Drop it near the top of the Discover or Profile screens.
  */
-import React,{ useMemo } from 'react';
-import { Animated,StyleSheet,Text,TouchableOpacity,View } from 'react-native';
+import React, { useEffect, useMemo, useRef } from 'react';
+import { Animated, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import LinearGradient from 'react-native-linear-gradient';
 import Icon from 'react-native-vector-icons/Ionicons';
 import { useAuth } from '../context/AuthContext';
-import { fontSizes,radii,spacing } from '../theme/theme';
+import { fontSizes, radii, spacing } from '../theme/theme';
+import { useReducedMotion } from '../hooks/useReducedMotion';
 
 interface Field { label: string; key: keyof import('../types/models').Profile; }
 
@@ -39,6 +40,7 @@ interface Props {
 export default function ProfileCompletionBanner({ onPress }: Props) {
   const { currentUser } = useAuth();
   const profile = currentUser?.profile;
+  const reduced = useReducedMotion();
 
   const { percent, missing } = useMemo(() => {
     if (!profile) return { percent: 0, missing: [] };
@@ -56,9 +58,29 @@ export default function ProfileCompletionBanner({ onPress }: Props) {
     };
   }, [profile]);
 
+  const animatedProgress = useRef(new Animated.Value(reduced ? percent : 0)).current;
+
+  useEffect(() => {
+    if (reduced) {
+      animatedProgress.setValue(percent);
+      return;
+    }
+    Animated.spring(animatedProgress, {
+      toValue: percent,
+      friction: 7,
+      tension: 60,
+      useNativeDriver: false,
+    }).start();
+  }, [percent, reduced, animatedProgress]);
+
   if (!profile || percent >= HIDE_THRESHOLD) return null;
 
   const color = percent < 40 ? '#EF4444' : percent < 70 ? '#F59E0B' : '#10B981';
+
+  const widthInterpolation = animatedProgress.interpolate({
+    inputRange: [0, 100],
+    outputRange: ['0%', '100%'],
+  });
 
   return (
     <TouchableOpacity
@@ -85,7 +107,7 @@ export default function ProfileCompletionBanner({ onPress }: Props) {
           </View>
           {/* Progress bar */}
           <View style={styles.track}>
-            <Animated.View style={[styles.fill, { width: `${percent}%` as any, backgroundColor: color }]} />
+            <Animated.View style={[styles.fill, { width: widthInterpolation, backgroundColor: color }]} />
           </View>
           {missing.length > 0 && (
             <Text style={styles.hint} numberOfLines={1}>

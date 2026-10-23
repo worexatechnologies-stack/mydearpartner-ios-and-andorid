@@ -13,7 +13,7 @@ jest.mock('../src/utils/crypto', () => ({ encryptMessageForChat: jest.fn().mockR
 jest.mock('../src/api/profileService', () => ({ getDiscoverProfiles: jest.fn().mockResolvedValue({ profiles: [] }) }));
 jest.mock('../src/api/apiClient', () => ({ get: jest.fn().mockResolvedValue([]) }));
 jest.mock('../src/api/chatService', () => ({ getChats: jest.fn().mockResolvedValue([]), getMessages: jest.fn(), getMessagePage: jest.fn(), sendMessage: jest.fn(), getOrCreateChat: jest.fn() }));
-jest.mock('../src/api/interestService', () => ({ getReceivedInterests: jest.fn().mockResolvedValue([]), getSentInterests: jest.fn().mockResolvedValue([]), sendInterest: jest.fn(), respondToInterest: jest.fn() }));
+jest.mock('../src/api/interestService', () => ({ getReceivedInterests: jest.fn().mockResolvedValue([]), getSentInterests: jest.fn().mockResolvedValue([]), sendInterest: jest.fn(), respondToInterest: jest.fn(), removeConnection: jest.fn().mockResolvedValue(undefined), cancelInterest: jest.fn().mockResolvedValue(undefined) }));
 jest.mock('../src/api/blockService', () => ({ blockService: { getBlockedUsers: jest.fn().mockResolvedValue([]) } }));
 jest.mock('../src/api/wsClient', () => ({ chatWsClient: { sendMessage: jest.fn().mockReturnValue(true), disconnect: jest.fn(), connect: jest.fn() } }));
 jest.mock('../src/utils/planAllowance', () => ({ recordInterestSentToday: jest.fn().mockResolvedValue(undefined), markDailyInterestsExhausted: jest.fn() }));
@@ -139,4 +139,52 @@ test('a failed older page keeps its cursor for retry and a repeated cursor ends 
   await act(async () => { await data.loadOlderChatMessages('chat', 'partner'); });
   expect(data.getChatHistoryState('chat')).toMatchObject({ next: null, loading: false, error: undefined });
   expect(data.getMessagesForChat('chat').map(m => m.id)).toEqual(['1', '3']);
+});
+
+
+test('unconnecting clears both directions and restores discovery despite chat history', async () => {
+  const partner = { id: 'partner-profile', userId: 'partner', name: 'Partner', gender: 'female' };
+  const sent = { id: 'sent-match', fromUserId: 'me', toUserId: 'partner', receiverProfile: partner, status: 'accepted', createdAt: 1 };
+  const received = { id: 'received-match', fromUserId: 'partner', toUserId: 'me', senderProfile: partner, status: 'accepted', createdAt: 1 };
+  (InterestService.getSentInterests as jest.Mock).mockResolvedValue([sent]);
+  (InterestService.getReceivedInterests as jest.Mock).mockResolvedValue([received]);
+  (ChatService.getChats as jest.Mock).mockResolvedValue([{ id: 'old-chat', participantIds: ['me', 'partner'], otherProfile: partner }]);
+  const { getDiscoverProfiles } = require('../src/api/profileService');
+  getDiscoverProfiles.mockResolvedValue({ profiles: [partner] });
+  await act(async () => { await data.refreshInterests(); await data.refreshChats(); });
+  await act(async () => { await data.refreshDiscoverProfiles(); });
+  expect(data.getInterestRelationship(partner.id).status).toBe('accepted');
+  expect(data.discoverProfiles).toEqual([]);
+  (InterestService.getSentInterests as jest.Mock).mockResolvedValue([]);
+  (InterestService.getReceivedInterests as jest.Mock).mockResolvedValue([{ ...received, status: 'declined' }]);
+  await act(async () => { await data.cancelInterest(sent.id); });
+  expect(InterestService.removeConnection).toHaveBeenCalledWith(sent.id);
+  expect(InterestService.respondToInterest).toHaveBeenCalledWith(received.id, 'declined');
+  expect(data.getInterestRelationship(partner.id).status).toBe('none');
+  expect(data.discoverProfiles.map(profile => profile.id)).toContain(partner.id);
+  await act(async () => { await data.refreshInterests(); await data.refreshDiscoverProfiles(); });
+  expect(data.getInterestRelationship(partner.id).status).toBe('declined');
+  expect(data.discoverProfiles.map(profile => profile.id)).toContain(partner.id);
+});
+
+test('a partner removing the connection closes chat and accepting again reopens it', async () => {
+  const partner = { id: 'reconnect-profile', userId: 'reconnect-user', name: 'Partner', gender: 'female' };
+  const { getDiscoverProfiles } = require('../src/api/profileService');
+  getDiscoverProfiles.mockResolvedValue({ profiles: [partner] });
+  const match = { id: 'reconnect-match', fromUserId: 'reconnect-user', toUserId: 'me', senderProfile: partner, status: 'accepted', createdAt: 1 };
+  (ChatService.getChats as jest.Mock).mockResolvedValue([{ id: 'reconnect-chat', participantIds: ['me', partner.userId], otherProfile: partner }]);
+  (InterestService.getSentInterests as jest.Mock).mockResolvedValue([]);
+  (InterestService.getReceivedInterests as jest.Mock).mockResolvedValue([match]);
+  await act(async () => { await data.refreshChats(); });
+  await act(async () => { await data.refreshInterests(); });
+  expect(data.chats.find(chat => chat.id === 'reconnect-chat')?.connectionClosed).toBe(false);
+  expect(data.discoverProfiles.map(profile => profile.id)).not.toContain(partner.id);
+  (InterestService.getReceivedInterests as jest.Mock).mockResolvedValue([]);
+  await act(async () => { await data.refreshInterests(); });
+  expect(data.chats.find(chat => chat.id === 'reconnect-chat')?.connectionClosed).toBe(true);
+  expect(data.discoverProfiles.map(profile => profile.id)).toContain(partner.id);
+  await act(async () => { await expect(data.sendMessage('reconnect-chat', 'Hello', partner.userId)).rejects.toThrow('removed'); });
+  (InterestService.getReceivedInterests as jest.Mock).mockResolvedValue([{ ...match, id: 'new-match' }]);
+  await act(async () => { await data.refreshInterests(); });
+  expect(data.chats.find(chat => chat.id === 'reconnect-chat')?.connectionClosed).toBe(false);
 });

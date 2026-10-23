@@ -3,6 +3,7 @@ import React, { useState } from 'react';
 import {
   Alert,
   FlatList,
+  Platform,
   StyleSheet,
   Text,
   TouchableOpacity,
@@ -164,6 +165,11 @@ export default function VisitorsScreen({ navigation }: Props) {
         keyExtractor={item => item.id}
         contentContainerStyle={styles.list}
         showsVerticalScrollIndicator={false}
+        scrollEventThrottle={1}
+        removeClippedSubviews={Platform.OS === 'android'}
+        maxToRenderPerBatch={10}
+        initialNumToRender={8}
+        windowSize={7}
         renderItem={({ item, index }) => {
           const interest = interestStatusFor(item.id);
           const isLocked = !allowance.isPremium && index > 0;

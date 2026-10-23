@@ -1,4 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { SESSION_STORAGE_SUFFIX } from '../config/env';
 
 /**
  * Small typed wrapper around AsyncStorage used to persist app state
@@ -21,12 +22,17 @@ export const StorageKeys = {
 
 /** Keep member-specific preferences separate when multiple accounts share a device. */
 export function accountStorageKey(key: string, accountId: string): string {
-  return `${key}:${encodeURIComponent(accountId)}`;
+  return environmentStorageKey(`${key}:${encodeURIComponent(accountId)}`);
+}
+
+function environmentStorageKey(key: string): string {
+  return SESSION_STORAGE_SUFFIX && !key.endsWith(SESSION_STORAGE_SUFFIX)
+    ? `${key}${SESSION_STORAGE_SUFFIX}` : key;
 }
 
 export async function getItem<T>(key: string): Promise<T | null> {
   try {
-    const raw = await AsyncStorage.getItem(key);
+    const raw = await AsyncStorage.getItem(environmentStorageKey(key));
     return raw ? (JSON.parse(raw) as T) : null;
   } catch (e) {
     console.warn(`Failed to read ${key} from storage`, e);
@@ -36,7 +42,7 @@ export async function getItem<T>(key: string): Promise<T | null> {
 
 export async function setItem<T>(key: string, value: T): Promise<void> {
   try {
-    await AsyncStorage.setItem(key, JSON.stringify(value));
+    await AsyncStorage.setItem(environmentStorageKey(key), JSON.stringify(value));
   } catch (e) {
     console.warn(`Failed to write ${key} to storage`, e);
   }
@@ -44,7 +50,7 @@ export async function setItem<T>(key: string, value: T): Promise<void> {
 
 export async function removeItem(key: string): Promise<void> {
   try {
-    await AsyncStorage.removeItem(key);
+    await AsyncStorage.removeItem(environmentStorageKey(key));
   } catch (e) {
     console.warn(`Failed to remove ${key} from storage`, e);
   }

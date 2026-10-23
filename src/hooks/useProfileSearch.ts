@@ -1,9 +1,10 @@
 import { useCallback,useEffect,useRef,useState } from 'react';
 import { getDiscoverProfiles } from '../api/profileService';
 import { Profile } from '../types/models';
+import { savedSearchService } from '../api/savedSearchService';
 
 /** Debounced, paginated server search. Late responses cannot replace a newer query. */
-export function useProfileSearch(query: string, accountId: string) {
+export function useProfileSearch(query: string, accountId: string, savedSearchId?: string) {
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -17,7 +18,8 @@ export function useProfileSearch(query: string, accountId: string) {
     setLoading(true);
     setError(null);
     try {
-      const result = await getDiscoverProfiles({ search: query.trim(), page: pageNumber, page_size: 30 });
+      const result = savedSearchId ? await savedSearchService.results(savedSearchId, pageNumber)
+        : await getDiscoverProfiles({ search: query.trim(), page: pageNumber, page_size: 30 });
       if (generation !== revision.current) return;
       setProfiles(previous => Array.from(new Map(
         [...(pageNumber === 1 ? [] : previous), ...result.profiles]
@@ -34,7 +36,7 @@ export function useProfileSearch(query: string, accountId: string) {
         setLoading(false);
       }
     }
-  }, [query, accountId]);
+  }, [query, accountId, savedSearchId]);
 
   useEffect(() => {
     const generation = ++revision.current;

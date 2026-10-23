@@ -1,4 +1,4 @@
-import { Profile } from '../types/models';
+import { Interest, Profile } from '../types/models';
 
 export interface DiscoveryFilters {
   maritalStatus: string;
@@ -29,4 +29,21 @@ export function filterDiscoveryProfiles(
       (filters.verified === 'Any' || profile.isVerified === true) &&
       (filters.online === 'Any' || profile.isOnline === true),
   );
+}
+
+/** Only a live request or accepted match should hide a member from discovery. */
+export function hasActiveDiscoveryRelationship(status: string): boolean {
+  return ['pending', 'sent', 'received', 'accepted'].includes(status);
+}
+
+export function activeDiscoveryMemberIds(interests: Interest[], ownIds: string[]): Set<string> {
+  const own = new Set(ownIds.filter(Boolean).map(String));
+  const ids = new Set<string>();
+  interests.filter(interest => hasActiveDiscoveryRelationship(interest.status)).forEach(interest => {
+    [interest.fromUserId, interest.toUserId, interest.senderProfile?.id, interest.senderProfile?.userId,
+      interest.receiverProfile?.id, interest.receiverProfile?.userId].forEach(id => {
+      if (id && !own.has(String(id))) ids.add(String(id));
+    });
+  });
+  return ids;
 }

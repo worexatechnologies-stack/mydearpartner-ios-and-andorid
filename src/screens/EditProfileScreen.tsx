@@ -25,6 +25,7 @@ import { sendOtp } from '../api/authService';
 import * as ProfileService from '../api/profileService';
 import AppButton from '../components/AppButton';
 import AuthImage from '../components/AuthImage';
+import MotionView from '../components/MotionView';
 import { useAuth } from '../context/AuthContext';
 import { RootStackParamList } from '../navigation/types';
 import { colors, shadow } from '../theme/theme';
@@ -34,6 +35,8 @@ import {
   websiteProfileChanges,
 } from '../utils/websiteProfileForm';
 import { COMPATIBLE_IMAGE_PICKER_OPTIONS } from '../utils/profilePhotos';
+import { usePersistentDraft } from '../hooks/usePersistentDraft';
+import { accountStorageKey } from '../utils/storage';
 
 if (
   Platform.OS === 'android' &&
@@ -124,7 +127,15 @@ export default function EditProfileScreen({ navigation }: Props) {
   const profile = currentUser?.profile;
 
   const [originalForm] = useState(() => websiteProfileValues(profile));
-  const [form, setForm] = useState(() => websiteProfileValues(profile));
+  const [draft, setDraft, clearDraft, draftReady] = usePersistentDraft<Record<string, string>>(
+    currentUser?.id ? accountStorageKey('@mdp/profile-draft-v1', currentUser.id) : null,
+    {},
+  );
+  const form = { ...originalForm, ...draft };
+  const setForm = (action: React.SetStateAction<Record<string, string>>) => setDraft(previous => {
+    const next = typeof action === 'function' ? action({ ...originalForm, ...previous }) : action;
+    return Object.fromEntries(Object.entries(next).filter(([key, value]) => value !== originalForm[key]));
+  });
   const [activeSection, setActiveSection] = useState('basic');
   const selectedSection = websiteProfileSections.find(
     section => section.id === activeSection,
@@ -235,6 +246,7 @@ export default function EditProfileScreen({ navigation }: Props) {
       const fileName = asset.fileName || 'photo.jpg';
       const mimeType = asset.type || 'image/jpeg';
       const uploaded = await ProfileService.uploadPhoto(asset.uri, fileName, mimeType);
+      LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
       setLocalPhotos(prev => [...prev, uploaded.uri]);
       setPhotoIds(prev => ({ ...prev, [uploaded.uri]: uploaded.id }));
       if (isPrimary) setPrimaryPhotoId(uploaded.id);
@@ -260,6 +272,7 @@ export default function EditProfileScreen({ navigation }: Props) {
           setDeletingPhoto(true);
           try {
             const result = await ProfileService.deletePhoto(photoId);
+            LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
             setLocalPhotos(prev => prev.filter(p => p !== uri));
             setPrimaryPhotoId(result?.primary_photo_id ?? null);
             if (refreshCurrentUser) await refreshCurrentUser();
@@ -370,6 +383,7 @@ export default function EditProfileScreen({ navigation }: Props) {
 
   // ── Save ─────────────────────────────────────────────────────
   const onSave = async () => {
+    if (!draftReady) return;
     if (uploadingPhotoIndex !== null || deletingPhoto) return;
     setError('');
     setLoading(true);
@@ -386,6 +400,7 @@ export default function EditProfileScreen({ navigation }: Props) {
         }
         await refreshCurrentUser();
       }
+      await clearDraft();
       navigation.goBack();
     } catch (e: any) {
       setError(e?.message || 'Failed to save profile. Please try again.');
@@ -428,6 +443,7 @@ export default function EditProfileScreen({ navigation }: Props) {
           <ScrollView
             horizontal
             showsHorizontalScrollIndicator={false}
+            scrollEventThrottle={1}
             contentContainerStyle={styles.tabRow}
             keyboardShouldPersistTaps="handled"
           >
@@ -465,6 +481,7 @@ export default function EditProfileScreen({ navigation }: Props) {
         <ScrollView
           keyboardShouldPersistTaps="handled"
           keyboardDismissMode="on-drag"
+          scrollEventThrottle={1}
           contentContainerStyle={[
             styles.content,
             isTablet && styles.constrained,
@@ -482,6 +499,7 @@ export default function EditProfileScreen({ navigation }: Props) {
             </View>
           ) : null}
 
+          <MotionView key={activeSection} replayKey={activeSection}>
           {/* ── Photos Tab ── */}
           {activeSection === 'photos' && (
             <View style={styles.glassCard}>
@@ -503,6 +521,7 @@ export default function EditProfileScreen({ navigation }: Props) {
                 <ScrollView
                   horizontal
                   showsHorizontalScrollIndicator={false}
+                  scrollEventThrottle={1}
                   contentContainerStyle={styles.photoRow}
                 >
                   {localPhotos.map((uri, index) => (
@@ -856,6 +875,7 @@ export default function EditProfileScreen({ navigation }: Props) {
               )}
             </View>
           )}
+          </MotionView>
         </ScrollView>
       </KeyboardAvoidingView>
 
@@ -866,7 +886,7 @@ export default function EditProfileScreen({ navigation }: Props) {
             title="Save Profile"
             onPress={onSave}
             loading={loading}
-            disabled={loading || uploadingPhotoIndex !== null || deletingPhoto}
+            disabled={!draftReady || loading || uploadingPhotoIndex !== null || deletingPhoto}
             style={styles.saveBtn}
           />
         </View>

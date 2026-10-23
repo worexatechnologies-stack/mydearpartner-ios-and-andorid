@@ -5,8 +5,9 @@
  * and iCloud Keychain (iOS) via react-native-keychain's Internet Credentials.
  */
 import * as Keychain from 'react-native-keychain';
+import { API_ORIGIN } from '../config/env';
 
-export const CREDENTIAL_SERVER = 'https://mydearpartner.in';
+export const CREDENTIAL_SERVER = API_ORIGIN;
 
 export interface SavedUserCredentials {
   username: string;

@@ -10,12 +10,15 @@ import {
 import LinearGradient from 'react-native-linear-gradient';
 import Icon from 'react-native-vector-icons/Ionicons';
 import AuthImage from './AuthImage';
+import AnimatedHeart from './AnimatedHeart';
 import { triggerHaptic } from '../utils/haptics';
+import { useReducedMotion } from '../hooks/useReducedMotion';
 
 interface Props {
   visible: boolean;
   profileName: string;
   avatarUrl?: string | null;
+  currentUserAvatarUrl?: string | null;
   onClose: () => void;
   onStartChat?: () => void;
   isMutual?: boolean;
@@ -25,16 +28,30 @@ export default function MatchCelebrationModal({
   visible,
   profileName,
   avatarUrl,
+  currentUserAvatarUrl,
   onClose,
   onStartChat,
   isMutual = false,
 }: Props) {
-  const scaleAnim = useRef(new Animated.Value(0.6)).current;
-  const opacityAnim = useRef(new Animated.Value(0)).current;
+  const reduced = useReducedMotion();
+  const scaleAnim = useRef(new Animated.Value(reduced ? 1 : 0.6)).current;
+  const opacityAnim = useRef(new Animated.Value(reduced ? 1 : 0)).current;
+  const leftAvatarAnim = useRef(new Animated.Value(reduced ? 1 : 0.8)).current;
+  const rightAvatarAnim = useRef(new Animated.Value(reduced ? 1 : 0.8)).current;
+  const connectionAnim = useRef(new Animated.Value(reduced ? 1 : 0)).current;
 
   useEffect(() => {
     if (visible) {
       triggerHaptic('success');
+      if (reduced) {
+        scaleAnim.setValue(1);
+        opacityAnim.setValue(1);
+        leftAvatarAnim.setValue(1);
+        rightAvatarAnim.setValue(1);
+        connectionAnim.setValue(1);
+        return;
+      }
+
       Animated.parallel([
         Animated.spring(scaleAnim, {
           toValue: 1,
@@ -47,12 +64,37 @@ export default function MatchCelebrationModal({
           duration: 250,
           useNativeDriver: true,
         }),
+        Animated.sequence([
+          Animated.delay(100),
+          Animated.parallel([
+            Animated.spring(leftAvatarAnim, {
+              toValue: 1,
+              friction: 5,
+              tension: 90,
+              useNativeDriver: true,
+            }),
+            Animated.spring(rightAvatarAnim, {
+              toValue: 1,
+              friction: 5,
+              tension: 90,
+              useNativeDriver: true,
+            }),
+            Animated.timing(connectionAnim, {
+              toValue: 1,
+              duration: 350,
+              useNativeDriver: true,
+            }),
+          ]),
+        ]),
       ]).start();
     } else {
-      scaleAnim.setValue(0.6);
-      opacityAnim.setValue(0);
+      scaleAnim.setValue(reduced ? 1 : 0.6);
+      opacityAnim.setValue(reduced ? 1 : 0);
+      leftAvatarAnim.setValue(reduced ? 1 : 0.8);
+      rightAvatarAnim.setValue(reduced ? 1 : 0.8);
+      connectionAnim.setValue(reduced ? 1 : 0);
     }
-  }, [visible, scaleAnim, opacityAnim]);
+  }, [visible, reduced, scaleAnim, opacityAnim, leftAvatarAnim, rightAvatarAnim, connectionAnim]);
 
   if (!visible) return null;
 
@@ -83,22 +125,93 @@ export default function MatchCelebrationModal({
             <Icon name="heart" size={32} color="#FFF" />
           </LinearGradient>
 
-          {/* Avatar Ring */}
-          <View style={styles.avatarWrapper}>
-            <LinearGradient
-              colors={['#FF5C97', '#F59E0B']}
-              style={styles.avatarGradientRing}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-            >
-              <View style={styles.avatarInner}>
-                <AuthImage
-                  source={{ uri: avatarUrl || undefined }}
-                  style={styles.avatar}
-                />
-              </View>
-            </LinearGradient>
-          </View>
+          {/* Avatars */}
+          {isMutual ? (
+            <View style={styles.dualAvatarContainer}>
+              {/* Left: Current User */}
+              <Animated.View
+                style={[
+                  styles.avatarSlot,
+                  {
+                    transform: [{ scale: leftAvatarAnim }],
+                    opacity: leftAvatarAnim,
+                  },
+                ]}
+              >
+                <LinearGradient
+                  colors={['#FF5C97', '#E9B44C']}
+                  style={styles.avatarGradientRing}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                >
+                  <View style={styles.avatarInner}>
+                    <AuthImage
+                      source={{ uri: currentUserAvatarUrl || undefined }}
+                      style={styles.avatar}
+                    />
+                  </View>
+                </LinearGradient>
+                <Text style={styles.avatarLabel} numberOfLines={1}>You</Text>
+              </Animated.View>
+
+              {/* Connecting Heart Pulse */}
+              <Animated.View
+                style={[
+                  styles.connectionHeartBox,
+                  {
+                    opacity: connectionAnim,
+                    transform: [{ scale: connectionAnim }],
+                  },
+                ]}
+              >
+                <AnimatedHeart size={24} color="#FF2D78" pulsing={true} />
+              </Animated.View>
+
+              {/* Right: Partner Match */}
+              <Animated.View
+                style={[
+                  styles.avatarSlot,
+                  {
+                    transform: [{ scale: rightAvatarAnim }],
+                    opacity: rightAvatarAnim,
+                  },
+                ]}
+              >
+                <LinearGradient
+                  colors={['#E9B44C', '#FF2D78']}
+                  style={styles.avatarGradientRing}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                >
+                  <View style={styles.avatarInner}>
+                    <AuthImage
+                      source={{ uri: avatarUrl || undefined }}
+                      style={styles.avatar}
+                    />
+                  </View>
+                </LinearGradient>
+                <Text style={styles.avatarLabel} numberOfLines={1}>
+                  {profileName.split(' ')[0]}
+                </Text>
+              </Animated.View>
+            </View>
+          ) : (
+            <View style={styles.avatarWrapper}>
+              <LinearGradient
+                colors={['#FF5C97', '#F59E0B']}
+                style={styles.singleAvatarRing}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+              >
+                <View style={styles.singleAvatarInner}>
+                  <AuthImage
+                    source={{ uri: avatarUrl || undefined }}
+                    style={styles.singleAvatar}
+                  />
+                </View>
+              </LinearGradient>
+            </View>
+          )}
 
           {/* Texts */}
           <Text style={styles.title}>
@@ -157,7 +270,7 @@ const styles = StyleSheet.create({
   },
   card: {
     width: '100%',
-    maxWidth: 340,
+    maxWidth: 360,
     backgroundColor: '#FFFFFF',
     borderRadius: 28,
     paddingTop: 36,
@@ -182,10 +295,53 @@ const styles = StyleSheet.create({
     borderColor: '#FFFFFF',
     elevation: 6,
   },
+  dualAvatarContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginVertical: 14,
+    width: '100%',
+    paddingHorizontal: 8,
+  },
+  avatarSlot: {
+    alignItems: 'center',
+    flex: 1,
+  },
+  avatarGradientRing: {
+    width: 78,
+    height: 78,
+    borderRadius: 39,
+    padding: 2.5,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  avatarInner: {
+    width: 73,
+    height: 73,
+    borderRadius: 36.5,
+    overflow: 'hidden',
+    backgroundColor: '#F1F5F9',
+  },
+  avatar: {
+    width: 73,
+    height: 73,
+  },
+  avatarLabel: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#302432',
+    marginTop: 6,
+  },
+  connectionHeartBox: {
+    marginHorizontal: -6,
+    zIndex: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   avatarWrapper: {
     marginVertical: 12,
   },
-  avatarGradientRing: {
+  singleAvatarRing: {
     width: 96,
     height: 96,
     borderRadius: 48,
@@ -193,14 +349,14 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  avatarInner: {
+  singleAvatarInner: {
     width: 90,
     height: 90,
     borderRadius: 45,
     overflow: 'hidden',
     backgroundColor: '#F1F5F9',
   },
-  avatar: {
+  singleAvatar: {
     width: 90,
     height: 90,
   },
@@ -253,3 +409,4 @@ const styles = StyleSheet.create({
     color: '#475569',
   },
 });
+

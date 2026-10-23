@@ -50,3 +50,25 @@ test('does not match missing fields or confuse vegetarian and non-vegetarian', (
     }),
   ).toEqual([]);
 });
+
+describe('unconnected profile visibility', () => {
+  const { hasActiveDiscoveryRelationship, activeDiscoveryMemberIds } = require('../src/utils/discoveryFilters');
+  test.each(['none', 'declined', 'withdrawn', 'cancelled', 'removed'])('%s relationships remain discoverable', status => {
+    expect(hasActiveDiscoveryRelationship(status)).toBe(false);
+  });
+  test.each(['pending', 'sent', 'received', 'accepted'])('%s relationships remain excluded', status => {
+    expect(hasActiveDiscoveryRelationship(status)).toBe(true);
+  });
+  test('only active partners are excluded across member/profile aliases and both directions', () => {
+    const interests = [
+      { id: 'removed', status: 'declined', fromUserId: 'me', toUserId: 'removed-member', receiverProfile: { id: 'removed-profile' } },
+      { id: 'withdrawn', status: 'withdrawn', fromUserId: 'old-member', toUserId: 'me' },
+      { id: 'sent', status: 'pending', fromUserId: 'me', toUserId: 'pending-member', receiverProfile: { id: 'pending-profile', userId: 'pending-member' } },
+      { id: 'received', status: 'accepted', fromUserId: 'connected-member', toUserId: 'me', senderProfile: { id: 'connected-profile' } },
+    ];
+    expect([...activeDiscoveryMemberIds(interests, ['me', 'my-profile'])].sort()).toEqual([
+      'connected-member', 'connected-profile', 'pending-member', 'pending-profile',
+    ]);
+    expect([...activeDiscoveryMemberIds(interests.map(item => ({ ...item, status: 'withdrawn' })), ['me'])]).toEqual([]);
+  });
+});

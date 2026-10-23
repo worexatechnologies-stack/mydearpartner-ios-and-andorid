@@ -1,6 +1,7 @@
 /**
  * MyDearPartner — App-wide Constants
  */
+import { SESSION_STORAGE_SUFFIX } from './env';
 
 /** HTTP request timeout in milliseconds */
 export const REQUEST_TIMEOUT_MS = 30_000;
@@ -9,7 +10,7 @@ export const REQUEST_TIMEOUT_MS = 30_000;
 export const MAX_RETRIES = 2;
 
 /** Keychain service name used for all secure storage */
-export const KEYCHAIN_SERVICE = 'com.mydearpartner.app';
+export const KEYCHAIN_SERVICE = `com.mydearpartner.app${SESSION_STORAGE_SUFFIX}`;
 
 /** Keychain account keys */
 export const KEYCHAIN_KEYS = {

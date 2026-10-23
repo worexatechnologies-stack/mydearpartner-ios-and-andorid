@@ -1,8 +1,9 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { loadTokens } from '../utils/keychain';
 import { Alert, AppState } from 'react-native';
+import { SESSION_STORAGE_SUFFIX } from '../config/env';
 
-const NOTICE_KEY = '@mdp/session_replaced_notice';
+const NOTICE_KEY = `@mdp/session_replaced_notice${SESSION_STORAGE_SUFFIX}`;
 export const SESSION_REPLACED_MESSAGE = 'Your account was signed in on another device. You have been logged out.';
 let showing = false;
 

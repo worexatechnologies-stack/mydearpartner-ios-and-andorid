@@ -40,6 +40,7 @@ type Props = NativeStackScreenProps<RootStackParamList, 'ProfileDetail'>;
 
 export default function ProfileDetailScreen({ route, navigation }: Props) {
   const [reportOpen, setReportOpen] = useState(false);
+  const [shortlistLoading, setShortlistLoading] = useState(false);
   const insets = useSafeAreaInsets();
   const { width, height, fontScale } = useWindowDimensions();
   const [layoutWidth, setLayoutWidth] = useState(
@@ -58,7 +59,11 @@ export default function ProfileDetailScreen({ route, navigation }: Props) {
     isBlockedByMe,
     blockUser,
     unblockUser,
+    isShortlisted: checkIsShortlistedGlobal,
+    toggleShortlist: toggleShortlistGlobal,
   } = useAppData();
+
+  const isShortlisted = checkIsShortlistedGlobal ? checkIsShortlistedGlobal(profileId) : false;
 
   const cachedProfile = getProfileById(profileId);
   const [profile, setProfile] = useState<Profile | null>(cachedProfile || null);
@@ -208,16 +213,25 @@ export default function ProfileDetailScreen({ route, navigation }: Props) {
   const onToggleInterest = async () => {
     if (isSending) return;
 
-    // Connected opens relationship actions; messaging remains a separate action.
-    if (rel.isMutual && rel.activeInterest) {
+    // 1. Connected opens relationship actions; messaging remains a separate action.
+    if (rel.isMutual) {
       Alert.alert('Connected', `You are connected with ${profile.name}.`, [
         { text: 'Cancel', style: 'cancel' },
         { text: 'Unconnect', style: 'destructive', onPress: async () => {
           setIsSending(true);
           try {
-            await cancelInterest(rel.activeInterest!.id);
+            const interestId = rel.activeInterest?.id || rel.sent?.id || rel.received?.id;
+            if (interestId) {
+              await cancelInterest(interestId);
+            }
           } catch (error: any) {
-            Alert.alert('Could not unconnect', error?.message ?? 'Please try again.');
+            const msg =
+              error?.status === 404 ||
+              error?.message?.toLowerCase().includes('not found') ||
+              error?.message?.toLowerCase().includes('no longer exists')
+                ? 'Connection is no longer active.'
+                : error?.message ?? 'Please try again.';
+            Alert.alert('Could not unconnect', msg);
           } finally {
             setIsSending(false);
           }
@@ -240,7 +254,13 @@ export default function ProfileDetailScreen({ route, navigation }: Props) {
           ],
         );
       } catch (err: any) {
-        Alert.alert('Notice', err?.message ?? 'Could not accept interest.');
+        const msg =
+          err?.status === 404 ||
+          err?.message?.toLowerCase().includes('not found') ||
+          err?.message?.toLowerCase().includes('no longer exists')
+            ? 'This interest request is no longer active.'
+            : err?.message ?? 'Could not accept interest.';
+        Alert.alert('Notice', msg);
       } finally {
         setIsSending(false);
       }
@@ -257,7 +277,13 @@ export default function ProfileDetailScreen({ route, navigation }: Props) {
           `Your interest to ${profile.name} has been withdrawn.`,
         );
       } catch (err: any) {
-        Alert.alert('Notice', err?.message ?? 'Could not unsend interest.');
+        const msg =
+          err?.status === 404 ||
+          err?.message?.toLowerCase().includes('not found') ||
+          err?.message?.toLowerCase().includes('no longer exists')
+            ? 'This interest has already been withdrawn or resolved.'
+            : err?.message ?? 'Could not unsend interest.';
+        Alert.alert('Notice', msg);
       } finally {
         setIsSending(false);
       }
@@ -349,6 +375,8 @@ export default function ProfileDetailScreen({ route, navigation }: Props) {
       navigation.navigate('Chat', {
         chatId: chat.id,
         otherProfileId: profile.id,
+        fallbackName: profile.name,
+        fallbackPhoto: profile.photo,
       });
     } catch (err: any) {
       if (
@@ -370,7 +398,13 @@ export default function ProfileDetailScreen({ route, navigation }: Props) {
           ],
         );
       } else {
-        Alert.alert('Notice', err?.message ?? 'Could not start conversation.');
+        // Fallback: navigate directly to chat with the member instead of blocking with an alert
+        navigation.navigate('Chat', {
+          chatId: `chat_${profile.id}`,
+          otherProfileId: profile.id,
+          fallbackName: profile.name,
+          fallbackPhoto: profile.photo,
+        });
       }
     }
   };
@@ -381,6 +415,21 @@ export default function ProfileDetailScreen({ route, navigation }: Props) {
       unblockUser(profile.id);
     } else {
       blockUser(profile.id);
+    }
+  };
+
+  const handleShortlistToggle = async () => {
+    if (shortlistLoading || isSelf || !profile) return;
+    setShortlistLoading(true);
+    triggerHaptic('medium');
+    try {
+      if (toggleShortlistGlobal) {
+        await toggleShortlistGlobal(profile.id);
+      }
+    } catch (err: any) {
+      console.warn('[ProfileDetail] Shortlist toggle error:', err?.message);
+    } finally {
+      setShortlistLoading(false);
     }
   };
 
@@ -438,6 +487,7 @@ export default function ProfileDetailScreen({ route, navigation }: Props) {
         style={styles.profileScroll}
         contentContainerStyle={{ paddingBottom: 24 }}
         bounces={false}
+        scrollEventThrottle={1}
       >
         {/* Full-screen Carousel Header */}
         <View
@@ -451,6 +501,7 @@ export default function ProfileDetailScreen({ route, navigation }: Props) {
               ref={headerScrollRef}
               horizontal
               pagingEnabled
+              scrollEventThrottle={1}
               style={{ height: HEADER_IMAGE_HEIGHT }}
               contentContainerStyle={{ height: HEADER_IMAGE_HEIGHT }}
               showsHorizontalScrollIndicator={false}
@@ -618,6 +669,7 @@ export default function ProfileDetailScreen({ route, navigation }: Props) {
                 horizontal
                 showsHorizontalScrollIndicator={false}
                 contentContainerStyle={styles.galleryStripScroll}
+                scrollEventThrottle={1}
               >
                 {allPhotos.map((p, idx) => (
                   <TouchableOpacity
@@ -758,6 +810,7 @@ export default function ProfileDetailScreen({ route, navigation }: Props) {
               horizontal
               showsHorizontalScrollIndicator={false}
               contentContainerStyle={styles.tagsScroll}
+              scrollEventThrottle={1}
             >
               {profile.height && (
                 <View style={styles.tagPill}>
@@ -863,8 +916,14 @@ export default function ProfileDetailScreen({ route, navigation }: Props) {
             </View>
           )}
 
-          {/* Family Details (Always visible for self, or if connected/accepted) */}
-          {(isSelf || existingInterest?.status === 'accepted') && (
+          {/* Family Details */}
+          {(isSelf ||
+            profile.fatherStatus ||
+            profile.motherStatus ||
+            profile.familyType ||
+            profile.familyLocation ||
+            (profile.websiteFields?.num_brothers !== undefined && profile.websiteFields?.num_brothers !== null) ||
+            (profile.websiteFields?.num_sisters !== undefined && profile.websiteFields?.num_sisters !== null)) && (
             <View style={styles.infoCard}>
               <View style={styles.cardHeaderRow}>
                 <Icon name="home" size={20} color={colors.primary} />
@@ -895,6 +954,26 @@ export default function ProfileDetailScreen({ route, navigation }: Props) {
                   value={profile.familyLocation || (isSelf ? 'Not provided' : undefined)}
                   compact={compactLayout}
                 />
+                {profile.websiteFields?.num_brothers !== undefined &&
+                  profile.websiteFields?.num_brothers !== null &&
+                  String(profile.websiteFields.num_brothers).trim() !== '' && (
+                    <DetailItem
+                      icon="person-add"
+                      label="Brothers"
+                      value={String(profile.websiteFields.num_brothers)}
+                      compact={compactLayout}
+                    />
+                  )}
+                {profile.websiteFields?.num_sisters !== undefined &&
+                  profile.websiteFields?.num_sisters !== null &&
+                  String(profile.websiteFields.num_sisters).trim() !== '' && (
+                    <DetailItem
+                      icon="person-add"
+                      label="Sisters"
+                      value={String(profile.websiteFields.num_sisters)}
+                      compact={compactLayout}
+                    />
+                  )}
               </View>
             </View>
           )}
@@ -1018,6 +1097,22 @@ export default function ProfileDetailScreen({ route, navigation }: Props) {
           <Icon name="close" size={22} color="#6B7280" />
         </AnimatedButton>
 
+        {/* Shortlist / Bookmark Button */}
+        {!isSelf && (
+          <AnimatedButton
+            style={[styles.pillActionBtn, isShortlisted && { backgroundColor: '#FEF3C7' }]}
+            activeScale={0.85}
+            onPress={handleShortlistToggle}
+            disabled={shortlistLoading}
+          >
+            <Icon
+              name={isShortlisted ? 'bookmark' : 'bookmark-outline'}
+              size={22}
+              color={isShortlisted ? '#D97706' : '#6B7280'}
+            />
+          </AnimatedButton>
+        )}
+
         {isSelf ? (
           <AnimatedButton
             style={styles.pillPrimaryBtn}
@@ -1119,15 +1214,23 @@ export default function ProfileDetailScreen({ route, navigation }: Props) {
             activeScale={0.9}
             onPress={async () => {
               try {
-                await cancelInterest(rel.received!.id);
+                if (rel.received?.id) {
+                  await cancelInterest(rel.received.id);
+                }
                 Alert.alert(
                   'Declined',
                   `Interest from ${profile.name} has been declined.`,
                 );
               } catch (e: any) {
+                const msg =
+                  e?.status === 404 ||
+                  e?.message?.toLowerCase().includes('not found') ||
+                  e?.message?.toLowerCase().includes('no longer exists')
+                    ? 'This request is no longer active.'
+                    : e?.message ?? 'Could not decline interest.';
                 Alert.alert(
                   'Notice',
-                  e?.message ?? 'Could not decline interest.',
+                  msg,
                 );
               }
             }}
@@ -1173,6 +1276,15 @@ export default function ProfileDetailScreen({ route, navigation }: Props) {
                 </TouchableOpacity>
               ) : (
                 <>
+                  <TouchableOpacity
+                    style={styles.menuItem}
+                    onPress={handleShortlistToggle}
+                    disabled={shortlistLoading}
+                  >
+                    <Text style={styles.menuItemText}>
+                      {isShortlisted ? '★ Remove from Shortlist' : '☆ Add to Shortlist'}
+                    </Text>
+                  </TouchableOpacity>
                   <TouchableOpacity
                     style={styles.menuItem}
                     onPress={() => {

@@ -1,5 +1,71 @@
 # App health review — 22 October 2026
 
+Full rerun results and device/deployment limitations are recorded in
+[FULL_APP_TEST_2026-10-22.md](FULL_APP_TEST_2026-10-22.md).
+
+## Latest readiness pass
+
+The latest mobile run passes 74 suites / 418 tests, TypeScript and security
+checks, with 0 lint errors / 244 warnings. All 48 supplementary Django tests and
+13 matching-gateway tests pass. CI now includes the session and gateway tests.
+Store links, mandatory update persistence, malformed version handling, rating
+failure state and release metadata synchronization are repaired. Android release
+lint passes with 0 errors / 24 warnings; APK/AAB rebuilds succeed. The current
+artifact hashes, native results and signature limitations are in the full app
+report above. [Current release status](release/CURRENT_RELEASE_STATUS.md) replaces
+the earlier overly broad readiness claim. Staging/device/provider acceptance and
+the remaining dependency/chat-protocol work still prevent production certification.
+
+## Completed follow-up repairs
+
+The full backend/website source was retrieved into an isolated checkout and repaired.
+The reviewable combined artifact is [platform-hardening.patch](production-fixes/platform-hardening.patch);
+[application instructions and remaining acceptance work](production-fixes/PLATFORM_HARDENING.md)
+describe its exact scope. Staff/Support roles remain retired, as requested.
+
+Saved searches and optional new-member alerts are also implemented.
+[Feature scope and deployment instructions](production-fixes/SAVED_SEARCH_ALERTS.md)
+include the separate backend/website patch and required database migration.
+
+[Unconnected profile visibility](production-fixes/UNCONNECTED_DISCOVERY.md) is
+also repaired in Search, Discover and the companion backend query.
+
+The contact request/approval feature was removed at the user’s request. Its
+mobile components, API client, tests and undeployed backend patch were removed;
+the contact details section is now hidden on every profile, including connected
+profiles and self previews, as requested. Regression tests cover both cases.
+
+Current verification supersedes the original snapshot below:
+
+| Area | Result |
+| --- | --- |
+| Mobile | TypeScript passed; 72 suites / 403 tests passed; 0 lint errors; security checks passed |
+| Local Django modules | 48 tests passed; schema generation validates without warnings; Python dependency audit has 0 findings |
+| Full production backend source | 290 passed / 1 PostgreSQL-only skipped; 29 additional notification tests passed; migration consistency passed |
+| Website | TypeScript, strict lint, 46 tests and production build passed; production dependency audit has 0 findings |
+| Android | Signed release APK and AAB built; APK/AAB signatures verified; duplicate font packaging fixed |
+| iOS | Unsigned arm64 simulator build passed; signed physical-device acceptance still required |
+
+Additional repairs cover the actual settings wire contract and rejected saves,
+account-switch preference races, native/browser auth responses, post-trial server
+errors, image resource limits, missing OTP templates, retired-role exposure and
+Admin lookup errors, deletion audit metadata, audited message visibility, public
+deletion/policy routes, safe website redirects and dependency upgrades. Local
+Celery beat now schedules retryable session notices. The local Python environment
+was recreated with Python 3.12 and Django 5.2.18.
+
+Prior baseline Android artifacts (before the saved-search feature):
+
+- `android/app/build/outputs/apk/release/app-release.apk`: SHA-256 `981c247cec8a9bf7d9bc49afab6e4cc17efe855fc0f65240502d96f7d2042005`.
+- `android/app/build/outputs/bundle/release/app-release.aab`: SHA-256 `ae43c4108b60fb2505cc6136e1fa76577140c4053d77f7397167e1f87cc75e7b`.
+
+The AAB signer is self-signed, as expected for an upload key; its registration still
+requires Play Console verification. No production deployment, store upload or
+live account modification was performed. Provider/device/staging acceptance and
+the legacy chat protocol migration remain open; these are not certified by unit tests.
+
+## Original review snapshot
+
 ## Scope
 
 Reviewed this checkout's React Native app, Node matching gateway, Django payment/safety/session modules, database routing, dependency audit, release preflight and selected public production routes. The full production Django authentication/profile/chat backend and web source are not in this checkout. No production deployment or authenticated production mutation was performed.
@@ -29,9 +95,9 @@ Reviewed this checkout's React Native app, Node matching gateway, Django payment
 | App production dependency audit | 24 high package findings remain through the braces advisory; local patch regressions pass, audit remains nonzero |
 | Release configuration preflight | Incomplete: local staging/account/payment/deployment configuration absent |
 
-The existing `server/.venv-release` references a missing Python executable. Django checks used an isolated Python 3.12 environment in `/tmp/mdp-django-audit-venv`, installed from `server/requirements.txt`. Recreate a project virtual environment with a working Python 3.10+ installation for ongoing development. Docker is unavailable in this shell, so actual PostgreSQL/PgBouncer authentication, replica behavior and Compose startup still need integration testing. SQLite module tests do not establish those behaviors.
+At the initial review, `server/.venv-release` referenced a missing Python executable (repaired in the follow-up above). Django checks used an isolated Python 3.12 environment in `/tmp/mdp-django-audit-venv`, installed from `server/requirements.txt`. Recreate a project virtual environment with a working Python 3.10+ installation for ongoing development. Docker is unavailable in this shell, so actual PostgreSQL/PgBouncer authentication, replica behavior and Compose startup still need integration testing. SQLite module tests do not establish those behaviors.
 
-The production-mode Django deploy check still reports API schema annotations/authentication-extension warnings and missing application-level HSTS/HTTPS redirect settings. Verify redirects and HSTS at the real reverse proxy; do not enable forwarded-header trust without checking the proxy boundary.
+The initial Django deploy check reported schema annotations and HTTPS configuration gaps. Those have been repaired. Subdomain-wide HSTS and preload remain deliberately disabled until the real deployment boundary is verified. Verify redirects and HSTS at the real reverse proxy; do not enable forwarded-header trust without checking the proxy boundary.
 
 ## Public production observations
 

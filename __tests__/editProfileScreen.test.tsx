@@ -4,6 +4,9 @@ import { Text, TextInput, TouchableOpacity } from 'react-native';
 import EditProfileScreen from '../src/screens/EditProfileScreen';
 import AppButton from '../src/components/AppButton';
 import { updateMyProfile } from '../src/api/profileService';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { accountStorageKey } from '../src/utils/storage';
+import { readResumeValue } from '../src/utils/resumeStorage';
 
 const mockRefresh = jest.fn().mockResolvedValue(undefined);
 const mockProfile = {
@@ -17,7 +20,7 @@ const mockProfile = {
 };
 jest.mock('../src/context/AuthContext', () => ({
   useAuth: () => ({
-    currentUser: { profile: mockProfile },
+    currentUser: { id: 'account', profile: mockProfile },
     updateProfile: jest.fn(),
     refreshCurrentUser: mockRefresh,
   }),
@@ -33,6 +36,8 @@ jest.mock('../src/api/profileService', () => ({
 }));
 jest.mock('../src/api/authService', () => ({ sendOtp: jest.fn() }));
 jest.mock('../src/api/apiClient', () => ({ post: jest.fn() }));
+
+beforeEach(async () => { await AsyncStorage.clear(); jest.clearAllMocks(); });
 
 it('renders website tabs, retains edits between tabs, and saves only changed supported fields', async () => {
   const navigation = { goBack: jest.fn(), navigate: jest.fn() };
@@ -81,4 +86,38 @@ it('renders website tabs, retains edits between tabs, and saves only changed sup
   expect(mockRefresh).toHaveBeenCalled();
   expect(navigation.goBack).toHaveBeenCalled();
   await act(async () => tree.unmount());
+});
+
+it('restores an interrupted profile edit and removes the draft after saving', async () => {
+  const navigation = { goBack: jest.fn(), navigate: jest.fn() };
+  let tree!: Renderer.ReactTestRenderer;
+  const mount = async () => {
+    await act(async () => {
+      tree = Renderer.create(<EditProfileScreen navigation={navigation as any} route={{} as any} />);
+    });
+  };
+  await mount();
+  const city = tree.root.findAllByType(TextInput).find(node => node.props.value === 'Pune')!;
+  act(() => city.props.onChangeText('Mumbai'));
+  await act(async () => tree.unmount());
+  await mount();
+  expect(tree.root.findAllByType(TextInput).some(node => node.props.value === 'Mumbai')).toBe(true);
+  const save = tree.root.findAllByType(AppButton).find(node => node.props.title === 'Save Profile')!;
+  (updateMyProfile as jest.Mock).mockRejectedValueOnce(new Error('Offline'));
+  await act(async () => save.props.onPress());
+  expect(await readResumeValue(accountStorageKey('@mdp/profile-draft-v1', 'account'))).toEqual({ work_location: 'Mumbai' });
+  await act(async () => save.props.onPress());
+  expect(updateMyProfile).toHaveBeenLastCalledWith({ work_location: 'Mumbai' });
+  expect(await readResumeValue(accountStorageKey('@mdp/profile-draft-v1', 'account'))).toBeNull();
+  await act(async () => tree.unmount());
+});
+
+jest.mock('@react-native-async-storage/async-storage', () => {
+  const values = new Map<string, string>();
+  return {
+    getItem: jest.fn(async (key: string) => values.get(key) ?? null),
+    setItem: jest.fn(async (key: string, value: string) => { values.set(key, value); }),
+    removeItem: jest.fn(async (key: string) => { values.delete(key); }),
+    clear: jest.fn(async () => { values.clear(); }),
+  };
 });

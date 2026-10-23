@@ -7,9 +7,10 @@
  */
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { SESSION_STORAGE_SUFFIX } from '../config/env';
 import { get } from './apiClient';
 
-const CACHE_KEY = '@mydearpartner_cached_membership_plans';
+const CACHE_KEY = `@mydearpartner_cached_membership_plans${SESSION_STORAGE_SUFFIX}`;
 
 export interface DynamicPlanLimits {
   dailyInterests: number; // Infinity for unlimited
