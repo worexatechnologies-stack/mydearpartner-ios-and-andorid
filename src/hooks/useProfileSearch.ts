@@ -40,7 +40,6 @@ export function useProfileSearch(query: string, accountId: string, savedSearchId
 
   useEffect(() => {
     const generation = ++revision.current;
-    setProfiles([]);
     setHasMore(false);
     setLoading(true);
     busy.current = true;

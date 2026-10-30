@@ -75,8 +75,13 @@ class SafetyTests(TestCase):
 
     def test_public_form_csrf_and_policy_pages(self):
         self.assertEqual(Client(enforce_csrf_checks=True).post('/account-deletion/', {'email': 'x@example.com', 'confirm': 'on'}).status_code, 403)
-        for page in ['privacy', 'terms', 'safety']:
+        for page in ['privacy', 'terms', 'safety', 'child-safety', 'child-safety-standards']:
             self.assertContains(Client().get(f'/policies/{page}/'), 'My Dear Partner')
+        for url in ['/api/v1/safety/child-safety-standards/', '/api/v1/child-safety-standards/', '/api/child-safety-standards/']:
+            resp = Client().get(url)
+            self.assertEqual(resp.status_code, 200)
+            self.assertContains(resp, 'Zero Tolerance')
+            self.assertContains(resp, 'support@mydearpartner.in')
 
     def test_public_deletion_rate_limit(self):
         client = Client()

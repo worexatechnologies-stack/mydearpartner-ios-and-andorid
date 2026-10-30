@@ -41,3 +41,20 @@ class ProductionSecretTests(SimpleTestCase):
     def test_configured_production_can_start(self):
         self.assertEqual(self.check_settings({'DJANGO_SECRET_KEY':
             'qa-only-41fd718d2e24f1abe4c41cd1e959bc91326477a0a85fa19f'}).returncode, 0)
+
+
+class ParserCharsetTests(SimpleTestCase):
+    def test_request_body_cannot_select_a_non_text_decompression_codec(self):
+        import io
+        from rest_framework.parsers import JSONParser
+        from rest_framework.exceptions import ParseError
+        for charset in ('bz2_codec', 'zlib_codec', 'base64_codec', 'hex_codec', 'rot_13'):
+            with self.subTest(charset=charset):
+                with self.assertRaisesMessage(ParseError, 'Unsupported charset'):
+                    JSONParser().parse(io.BytesIO(b'{}'), parser_context={'encoding': charset})
+
+    def test_utf8_json_remains_supported(self):
+        import io
+        from rest_framework.parsers import JSONParser
+        self.assertEqual(JSONParser().parse(io.BytesIO(b'{"ok":true}'),
+            parser_context={'encoding': 'utf-8'}), {'ok': True})

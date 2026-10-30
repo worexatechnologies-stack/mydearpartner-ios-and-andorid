@@ -24,8 +24,49 @@ function unwrapAuthResponse(response: unknown): unknown {
 }
 
 export interface LoginPayload {
-  email: string; // Used in UI
+  email: string; // Email, mobile number, or member ID
   password: string;
+}
+
+interface LoginChallengeBase {
+  requires_otp: true;
+  phone_masked?: string;
+  message?: string;
+}
+
+export type LoginChallengeResponse = LoginChallengeBase & (
+  | { challenge_id: string; requires_two_factor?: never; mobile_number?: never }
+  | { requires_two_factor: true; mobile_number: string; challenge_id?: never }
+);
+
+export type LoginResult = LoginResponse | LoginChallengeResponse;
+
+function parseLoginChallenge(response: unknown): LoginChallengeResponse {
+  const data = unwrapAuthResponse(response) as Record<string, unknown> | null;
+  if (data && data.requires_otp === true && typeof data.challenge_id === 'string' && data.challenge_id.trim()) {
+    return {
+      requires_otp: true,
+      challenge_id: data.challenge_id,
+      phone_masked: typeof data.phone_masked === 'string' ? data.phone_masked : undefined,
+      message: typeof data.message === 'string' ? data.message : undefined,
+    };
+  }
+  // The complete backend uses TWO_FACTOR challenges identified by the registered
+  // mobile returned after password validation, rather than an opaque UUID.
+  if (data && data.requires_two_factor === true && typeof data.mobile_number === 'string') {
+    const digits = data.mobile_number.replace(/[\s()+.-]/g, '');
+    const mobile = digits.length === 12 && digits.startsWith('91') ? digits.slice(2) : digits;
+    if (/^[6-9][0-9]{9}$/.test(mobile)) {
+      return {
+        requires_otp: true,
+        requires_two_factor: true,
+        mobile_number: mobile,
+        phone_masked: `******${mobile.slice(-4)}`,
+        message: typeof data.message === 'string' ? data.message : undefined,
+      };
+    }
+  }
+  throw new Error('OTP sign-in is temporarily unavailable. Please try again later or contact support.');
 }
 
 export interface RegisterPayload {
@@ -37,8 +78,12 @@ export interface RegisterPayload {
   mobile?: string;
   first_name?: string;
   last_name?: string;
+  gender?: string;
+  profile_created_by?: string;
   referral_code?: string;
 }
+
+export type RegisterResult = RegisterResponse | LoginChallengeResponse;
 
 export interface OtpSendPayload {
   mobile: string;
@@ -57,12 +102,12 @@ export interface ChangePasswordPayload {
 /**
  * Login with email (or mobile) + password.
  * Maps 'email' to 'identifier' for the Django backend.
- * Stores tokens securely in Keychain on success.
+ * Returns either an authenticated session (when OTP is not required) or an OTP challenge.
  */
 export async function login(
   payload: LoginPayload,
   isCurrent: () => boolean = () => true,
-): Promise<LoginResponse> {
+): Promise<LoginResult> {
   const backendPayload = {
     identifier: payload.email,
     password: payload.password,
@@ -70,13 +115,47 @@ export async function login(
 
   const response = await post<unknown>('/auth/login/', backendPayload, false);
 
-  // Handle Django backend envelope { data: { access, refresh, user }, success, message }
-  const data = unwrapAuthResponse(response);
+  // Both API response envelopes and direct challenge responses are supported.
+  const data = unwrapAuthResponse(response) as Record<string, unknown> | null;
 
+  if (!isCurrent()) throw new Error('Authentication was cancelled. Please try again.');
+
+  // If the backend returns tokens directly (e.g. demo/reviewer account where 2FA is bypassed)
+  if (data && (data.requires_two_factor === false || data.requires_otp === false || (typeof data.access === 'string' && data.access && typeof data.refresh === 'string' && data.refresh && Boolean(data.user && typeof data.user === 'object' && (data.user as any).id)))) {
+    assertAuthResponse(data);
+    await saveTokens(data.access, data.refresh, isCurrent);
+    return data;
+  }
+
+  return parseLoginChallenge(data);
+}
+
+export async function verifyLoginOtp(
+  payload: { challenge_id: string; otp: string } | { mobile_number: string; otp: string },
+  isCurrent: () => boolean = () => true,
+): Promise<LoginResponse> {
+  const response = 'mobile_number' in payload
+    ? await post<unknown>('/auth/otp/verify/', {
+      identifier: payload.mobile_number,
+      code: payload.otp.trim(),
+      purpose: 'TWO_FACTOR',
+    }, false)
+    : await post<unknown>('/auth/login/verify/', {
+      challenge_id: payload.challenge_id,
+      otp: payload.otp.trim(),
+    }, false);
+  const data = unwrapAuthResponse(response);
   assertAuthResponse(data);
   if (!isCurrent()) throw new Error('Authentication was cancelled. Please try again.');
   await saveTokens(data.access, data.refresh, isCurrent);
   return data;
+}
+
+export async function resendLoginOtp(challengeId: string): Promise<LoginChallengeResponse> {
+  const response = await post<unknown>('/auth/login/resend-otp/', {
+    challenge_id: challengeId,
+  }, false);
+  return parseLoginChallenge(response);
 }
 
 /**
@@ -86,19 +165,38 @@ export async function login(
 export async function register(
   payload: RegisterPayload,
   isCurrent: () => boolean = () => true,
-): Promise<RegisterResponse> {
-  const response = await post<unknown>('/auth/register/', {
+): Promise<RegisterResult> {
+  const normalizedGender = typeof payload.gender === 'string' ? payload.gender.trim().toLowerCase() : undefined;
+  const gender = normalizedGender
+    ? normalizedGender.charAt(0).toUpperCase() + normalizedGender.slice(1)
+    : undefined;
+  const response = await post<unknown>('/member-auth/register/', {
     ...payload,
+    ...(gender ? { gender } : {}),
     mobile_number: payload.mobile,
     confirm_password: payload.password,
     accept_terms: payload.accept_terms === true,
   }, false);
   const data = unwrapAuthResponse(response);
-
-  assertAuthResponse(data);
+  const value = data as (Partial<RegisterResponse> & { access?: string }) | null;
+  if (!value) throw new Error('The server returned an invalid registration response. Please try again.');
+  if (typeof value.access !== 'string' || !value.access) {
+    // The production web registration endpoint authenticates with cookies and
+    // returns the created user in JSON. Native clients need a bearer session,
+    // so exchange the just-created credentials through the normal login flow.
+    if (value.user && typeof value.user === 'object') {
+      return login({ email: payload.email, password: payload.password }, isCurrent);
+    }
+    throw new Error('The account response did not confirm creation. Please try again or sign in.');
+  }
   if (!isCurrent()) throw new Error('Authentication was cancelled. Please try again.');
-  await saveTokens(data.access, data.refresh, isCurrent);
-  return data;
+  await saveTokens(value.access, value.refresh ?? null, isCurrent);
+  // Member registration may return only an access token; the app loads the
+  // authenticated profile to establish the complete user identity.
+  return {
+    ...value,
+    user: value.user ?? { id: '' },
+  } as RegisterResponse;
 }
 
 export interface ResetPasswordPayload {

@@ -1,3 +1,4 @@
+// @refresh reset
 import ChatScreen from '../ChatScreen';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { FLOATING_TAB_BAR_BOTTOM } from '../../navigation/tabBarLayout';
@@ -7,17 +8,20 @@ import {
 } from '@react-navigation/bottom-tabs';
 import { CompositeScreenProps, useFocusEffect, useIsFocused } from '@react-navigation/native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Alert,
   Animated,
   FlatList,
+  LayoutAnimation,
   Platform,
   RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
   TextInput,
+  TouchableOpacity,
+  UIManager,
   View,
   useWindowDimensions,
 } from 'react-native';
@@ -43,6 +47,7 @@ import {
   typeScale,
 } from '../../theme/theme';
 import { getChatContentPreview } from '../../utils/chatContent';
+import { getItem, setItem } from '../../utils/storage';
 import { triggerHaptic } from '../../utils/haptics';
 import { usePlanAllowance } from '../../utils/planAllowance';
 
@@ -98,6 +103,31 @@ function ConversationList({ navigation, onOpenChat, selectedId }: Props & {
   const [refreshing, setRefreshing] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const [safetyMinimized, setSafetyMinimized] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    getItem<boolean>('@mdp/safety_notice_minimized').then(val => {
+      if (active && typeof val === 'boolean') {
+        setSafetyMinimized(val);
+      }
+    });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const toggleSafetyNotice = () => {
+    if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
+      UIManager.setLayoutAnimationEnabledExperimental(true);
+    }
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    setSafetyMinimized(prev => {
+      const next = !prev;
+      setItem('@mdp/safety_notice_minimized', next).catch(() => {});
+      return next;
+    });
+  };
 
   const handleRefresh = async () => {
     setRefreshing(true);
@@ -344,19 +374,35 @@ function ConversationList({ navigation, onOpenChat, selectedId }: Props & {
       )}
 
       {/* Safety & Privacy Notice */}
-      <View style={styles.safetyNoticeCard}>
-        <View style={styles.safetyHeaderRow}>
-          <View style={styles.safetyIconBadge}>
-            <ShieldCheck size={16} color="#B45309" strokeWidth={2.4} />
+      <View style={[styles.safetyNoticeCard, safetyMinimized && styles.safetyNoticeCardMinimized]}>
+        <TouchableOpacity
+          style={styles.safetyHeaderRow}
+          onPress={toggleSafetyNotice}
+          activeOpacity={0.7}
+          accessibilityRole="button"
+          accessibilityLabel={safetyMinimized ? 'Expand Safety and Privacy Notice' : 'Minimize Safety and Privacy Notice'}
+        >
+          <View style={styles.safetyHeaderLeft}>
+            <View style={[styles.safetyIconBadge, safetyMinimized && styles.safetyIconBadgeSmall]}>
+              <ShieldCheck size={safetyMinimized ? 13 : 15} color="#B45309" strokeWidth={2.4} />
+            </View>
+            <Text style={[styles.safetyTitle, safetyMinimized && styles.safetyTitleSmall]}>
+              Safety & Privacy Notice
+            </Text>
           </View>
-          <Text style={styles.safetyTitle}>Safety & Privacy Notice</Text>
-        </View>
-        <Text style={styles.safetyDescription}>
-          My Dear Partner facilitates matchmaking introductions only. We are not responsible for any personal communications, off-platform meetings, financial transactions, or agreements between members.{' '}
-          <Text style={styles.safetyHighlight}>
-            Never transfer funds or share banking credentials.
+          <View style={styles.safetyActionBtn}>
+            <Text style={styles.safetyActionBtnText}>{safetyMinimized ? 'View' : 'Minimize'}</Text>
+            <Icon name={safetyMinimized ? 'chevron-down' : 'chevron-up'} size={14} color="#92400E" />
+          </View>
+        </TouchableOpacity>
+        {!safetyMinimized && (
+          <Text style={styles.safetyDescription}>
+            My Dear Partner facilitates matchmaking introductions only. We are not responsible for any personal communications, off-platform meetings, financial transactions, or agreements between members.{' '}
+            <Text style={styles.safetyHighlight}>
+              Never transfer funds or share banking credentials.
+            </Text>
           </Text>
-        </Text>
+        )}
       </View>
 
       {/* Chat list */}
@@ -873,10 +919,19 @@ const styles = StyleSheet.create({
     padding: spacing.md,
     ...shadow.sm,
   },
+  safetyNoticeCardMinimized: {
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+  },
   safetyHeaderRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 6,
+    justifyContent: 'space-between',
+  },
+  safetyHeaderLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
   },
   safetyIconBadge: {
     width: 26,
@@ -887,17 +942,42 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     marginRight: 8,
   },
+  safetyIconBadgeSmall: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    marginRight: 6,
+  },
   safetyTitle: {
     fontSize: 13,
     fontWeight: '800',
     color: '#92400E',
     letterSpacing: 0.2,
   },
+  safetyTitleSmall: {
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  safetyActionBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 10,
+    backgroundColor: 'rgba(180, 83, 9, 0.08)',
+  },
+  safetyActionBtnText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#92400E',
+  },
   safetyDescription: {
     fontSize: 12,
     lineHeight: 17,
     color: '#78350F',
     fontWeight: '400',
+    marginTop: 6,
   },
   safetyHighlight: {
     fontWeight: '700',

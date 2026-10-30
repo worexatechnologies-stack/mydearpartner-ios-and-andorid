@@ -1,3 +1,4 @@
+// @refresh reset
 function isRemovedMatch(error: unknown): boolean {
   const value = error as { code?: string; message?: string } | null;
   return value?.code === 'match_removed' || value?.message === 'This match has been removed.';
@@ -13,20 +14,22 @@ import {
   Animated,
   AppState,
   DeviceEventEmitter,
-FlatList,
-Keyboard,
-KeyboardAvoidingView,
-Modal,
-Platform,
-ScrollView,
-StatusBar,
-StyleSheet,
-Text,
-TextInput,
-TouchableOpacity,
-TouchableWithoutFeedback,
-View,
-useWindowDimensions,
+  FlatList,
+  Keyboard,
+  KeyboardAvoidingView,
+  LayoutAnimation,
+  Modal,
+  Platform,
+  ScrollView,
+  StatusBar,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  TouchableWithoutFeedback,
+  UIManager,
+  View,
+  useWindowDimensions,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Icon from 'react-native-vector-icons/Ionicons';
@@ -41,7 +44,7 @@ import { useAppData } from '../context/AppDataContext';
 import { useAuth } from '../context/AuthContext';
 import { RootStackParamList } from '../navigation/types';
 import { usePersistentDraft } from '../hooks/usePersistentDraft';
-import { accountStorageKey } from '../utils/storage';
+import { accountStorageKey, getItem, setItem } from '../utils/storage';
 import { subscribeToPresence } from '../services/PresenceService';
 import { Message } from '../types/models';
 import { parseStickerMessage } from '../utils/chatContent';
@@ -318,6 +321,31 @@ export default function ChatScreen({ route, navigation, embedded = false }: Prop
   const [reportTarget, setReportTarget] = useState<ReportTarget | null>(null);
   const [showMenu, setShowMenu] = useState(false);
   const [blockedByThem, setBlockedByThem] = useState<boolean | null>(null);
+  const [safetyMinimized, setSafetyMinimized] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    getItem<boolean>('@mdp/safety_notice_minimized').then(val => {
+      if (active && typeof val === 'boolean') {
+        setSafetyMinimized(val);
+      }
+    });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const toggleSafetyNotice = () => {
+    if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
+      UIManager.setLayoutAnimationEnabledExperimental(true);
+    }
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    setSafetyMinimized(prev => {
+      const next = !prev;
+      setItem('@mdp/safety_notice_minimized', next).catch(() => {});
+      return next;
+    });
+  };
   const blockRequestRevision = useRef(0);
   const [matchRemoved, setMatchRemoved] = useState(false);
   const listRef = useRef<FlatList>(null);
@@ -787,19 +815,39 @@ export default function ChatScreen({ route, navigation, embedded = false }: Prop
       )}
 
       {/* Safety & Privacy Notice */}
-      <View style={[styles.chatSafetyBanner, isLarge && styles.largeConstrained]}>
-        <View style={styles.chatSafetyIconCircle}>
-          <ShieldCheck size={14} color="#FBBF24" strokeWidth={2.4} />
-        </View>
-        <View style={{ flex: 1 }}>
-          <Text style={styles.chatSafetyTitle}>Safety & Privacy Notice</Text>
+      <View style={[
+        styles.chatSafetyBanner,
+        safetyMinimized && styles.chatSafetyBannerMinimized,
+        isLarge && styles.largeConstrained,
+      ]}>
+        <TouchableOpacity
+          style={styles.chatSafetyHeaderRow}
+          onPress={toggleSafetyNotice}
+          activeOpacity={0.7}
+          accessibilityRole="button"
+          accessibilityLabel={safetyMinimized ? 'Expand Safety and Privacy Notice' : 'Minimize Safety and Privacy Notice'}
+        >
+          <View style={styles.chatSafetyHeaderLeft}>
+            <View style={[styles.chatSafetyIconCircle, safetyMinimized && styles.chatSafetyIconCircleSmall]}>
+              <ShieldCheck size={safetyMinimized ? 12 : 14} color="#FBBF24" strokeWidth={2.4} />
+            </View>
+            <Text style={[styles.chatSafetyTitle, safetyMinimized && styles.chatSafetyTitleSmall]}>
+              Safety & Privacy Notice
+            </Text>
+          </View>
+          <View style={styles.chatSafetyActionBtn}>
+            <Text style={styles.chatSafetyActionBtnText}>{safetyMinimized ? 'View' : 'Minimize'}</Text>
+            <Icon name={safetyMinimized ? 'chevron-down' : 'chevron-up'} size={13} color="#FBBF24" />
+          </View>
+        </TouchableOpacity>
+        {!safetyMinimized && (
           <Text style={styles.chatSafetyText}>
             My Dear Partner facilitates matchmaking introductions only. We are not responsible for any personal communications, off-platform meetings, financial transactions, or agreements between members.{' '}
             <Text style={styles.chatSafetyHighlight}>
               Never transfer funds or share banking credentials.
             </Text>
           </Text>
-        </View>
+        )}
       </View>
 
       {/* Messages */}
@@ -1354,7 +1402,6 @@ const styles = StyleSheet.create({
     marginRight: 2,
   },
   chatSafetyBanner: {
-    flexDirection: 'row',
     backgroundColor: 'rgba(251, 191, 36, 0.08)',
     borderWidth: 1,
     borderColor: 'rgba(251, 191, 36, 0.22)',
@@ -1363,7 +1410,21 @@ const styles = StyleSheet.create({
     marginTop: 6,
     marginBottom: 6,
     padding: 10,
-    alignItems: 'flex-start',
+  },
+  chatSafetyBannerMinimized: {
+    paddingVertical: 7,
+    paddingHorizontal: 10,
+  },
+  chatSafetyHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    width: '100%',
+  },
+  chatSafetyHeaderLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
   },
   chatSafetyIconCircle: {
     width: 24,
@@ -1373,19 +1434,42 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: 9,
-    marginTop: 1,
+  },
+  chatSafetyIconCircleSmall: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    marginRight: 6,
   },
   chatSafetyTitle: {
     fontSize: 11.5,
     fontWeight: '800',
     color: '#FBBF24',
-    marginBottom: 2,
     letterSpacing: 0.2,
+  },
+  chatSafetyTitleSmall: {
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  chatSafetyActionBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: 8,
+    backgroundColor: 'rgba(251, 191, 36, 0.14)',
+  },
+  chatSafetyActionBtnText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#FBBF24',
   },
   chatSafetyText: {
     fontSize: 10.5,
     lineHeight: 15,
     color: 'rgba(255, 255, 255, 0.82)',
+    marginTop: 6,
   },
   chatSafetyHighlight: {
     fontWeight: '700',

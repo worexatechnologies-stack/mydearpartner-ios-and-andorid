@@ -227,7 +227,7 @@ export default function DiscoverScreen({ navigation }: Props) {
             accessibilityLabel="Search profiles"
             onPress={() => navigation.navigate('Search')}
           >
-            <Search size={20} color="#333" />
+            <Search size={20} color="#541B3B" />
           </TouchableOpacity>
           <TouchableOpacity
             style={styles.iconButtonCircle}
@@ -235,7 +235,7 @@ export default function DiscoverScreen({ navigation }: Props) {
             accessibilityLabel="Notifications"
             onPress={() => navigation.navigate('Notifications')}
           >
-            <Bell size={20} color="#333" />
+            <Bell size={20} color="#541B3B" />
             {totalNotifications > 0 && (
               <View style={styles.notificationBadge}>
                 <Text style={styles.notificationText}>
@@ -744,8 +744,8 @@ const ProfileFeedCard = React.memo(({
               resizeMode="cover"
             />
             <LinearGradient
-              colors={['rgba(0,0,0,0.0)', 'rgba(0,0,0,0.2)', 'rgba(0,0,0,0.8)']}
-              locations={[0, 0.5, 1]}
+              colors={['transparent', 'rgba(26, 7, 18, 0.15)', 'rgba(26, 7, 18, 0.88)']}
+              locations={[0, 0.45, 1]}
               style={StyleSheet.absoluteFill}
             />
 
@@ -911,17 +911,17 @@ const styles = StyleSheet.create({
   logoText: {
     fontSize: 19,
     fontWeight: '800',
-    color: '#1F2937',
+    color: '#2E0D24',
     letterSpacing: -0.5,
   },
   logoTextHighlight: {
     color: colors.action,
   },
   logoSubText: {
-    fontSize: 7,
+    fontSize: 7.5,
     fontWeight: '700',
-    color: '#6B7280',
-    letterSpacing: 0.6,
+    color: '#8A687D',
+    letterSpacing: 0.8,
     marginTop: 1,
   },
   headerRight: {
@@ -933,7 +933,9 @@ const styles = StyleSheet.create({
     width: 48,
     height: 48,
     borderRadius: 20,
-    backgroundColor: '#E5E7EB',
+    backgroundColor: '#FFF0F5',
+    borderWidth: 1,
+    borderColor: '#F3DCE6',
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -941,14 +943,14 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: 0,
     right: 0,
-    backgroundColor: '#EF4444',
+    backgroundColor: colors.action,
     width: 14,
     height: 14,
     borderRadius: 7,
     justifyContent: 'center',
     alignItems: 'center',
     borderWidth: 1.5,
-    borderColor: '#E5E7EB',
+    borderColor: '#FFF0F5',
   },
   notificationText: {
     color: '#FFF',
@@ -964,29 +966,36 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 8,
     borderRadius: 100,
-    backgroundColor: '#E5E7EB',
+    backgroundColor: '#FFF0F5',
     borderWidth: 1,
-    borderColor: 'transparent',
+    borderColor: '#F1DCE5',
   },
   filterTabActive: {
-    backgroundColor: '#FDF2F8',
-    borderColor: '#FBCFE8',
+    backgroundColor: '#8A2252',
+    borderColor: '#8A2252',
+    shadowColor: '#8A2252',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 2,
   },
   filterTabText: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#4B5563',
+    color: '#6F5668',
   },
   filterTabTextActive: {
     fontSize: 14,
     fontWeight: '700',
-    color: colors.action,
+    color: '#FFFFFF',
   },
   filterIconBtn: {
     width: 48,
     height: 48,
     borderRadius: 18,
-    backgroundColor: '#E5E7EB',
+    backgroundColor: '#FFF0F5',
+    borderWidth: 1,
+    borderColor: '#F1DCE5',
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: 16,
@@ -1105,7 +1114,7 @@ const styles = StyleSheet.create({
     fontSize: 14,
   },
 
-  /* Material Design 3 Card Styling */
+  /* Modern Warm Luxury Card Styling */
   cardContainer: {
     flex: 1,
     minHeight: 0,
@@ -1114,14 +1123,13 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFFFFF',
     borderRadius: 28,
     overflow: 'hidden',
-    // M3 subtle elevation
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.08,
-    shadowRadius: 8,
-    elevation: 3,
+    shadowColor: '#4A122E',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.14,
+    shadowRadius: 18,
+    elevation: 8,
     borderWidth: 1,
-    borderColor: 'rgba(0,0,0,0.03)',
+    borderColor: 'rgba(165, 55, 96, 0.12)',
   },
   cardTouchWrapper: {
     flex: 1,
@@ -1145,7 +1153,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: 16,
     paddingVertical: 8,
-    borderRadius: 12,
+    borderRadius: 14,
     borderWidth: 2,
     borderColor: '#FFF',
     gap: 6,
@@ -1166,13 +1174,13 @@ const styles = StyleSheet.create({
     minHeight: 100,
     width: '100%',
     position: 'relative',
-    backgroundColor: '#E5E7EB',
+    backgroundColor: '#F9EAF0',
   },
   badgesRow: {
     position: 'absolute',
-    top: 16,
-    left: 16,
-    right: 16,
+    top: 14,
+    left: 14,
+    right: 14,
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 8,
@@ -1180,30 +1188,32 @@ const styles = StyleSheet.create({
   badgeVerified: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#10B981', // M3 emerald
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 8,
+    backgroundColor: 'rgba(16, 185, 129, 0.94)',
+    paddingHorizontal: 11,
+    paddingVertical: 5,
+    borderRadius: 20,
     gap: 4,
   },
   badgePremium: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#F59E0B',
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 8,
+    backgroundColor: 'rgba(212, 175, 55, 0.95)',
+    borderWidth: 1,
+    borderColor: '#FFE29A',
+    paddingHorizontal: 11,
+    paddingVertical: 5,
+    borderRadius: 20,
     gap: 4,
   },
   badgeKundali: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(120, 53, 15, 0.9)',
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 8,
+    backgroundColor: 'rgba(58, 16, 48, 0.88)',
+    paddingHorizontal: 11,
+    paddingVertical: 5,
+    borderRadius: 20,
     borderWidth: 1,
-    borderColor: '#F59E0B',
+    borderColor: 'rgba(245, 158, 11, 0.5)',
   },
   badgeKundaliText: {
     color: '#FEF3C7',
@@ -1221,7 +1231,7 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     padding: 20,
-    paddingTop: 40, // For smooth gradient fade
+    paddingTop: 40,
   },
   nameRow: {
     flexDirection: 'row',
@@ -1230,10 +1240,10 @@ const styles = StyleSheet.create({
   },
   nameText: {
     flexShrink: 1,
-    fontSize: 26,
+    fontSize: 27,
     fontWeight: '800',
     color: '#FFFFFF',
-    letterSpacing: 0.2,
+    letterSpacing: -0.3,
   },
   onlineDot: {
     width: 10,
@@ -1245,13 +1255,13 @@ const styles = StyleSheet.create({
     borderColor: '#FFF',
   },
   basicSubText: {
-    color: '#F3F4F6',
+    color: '#FCEBF1',
     fontSize: 15,
-    fontWeight: '500',
-    letterSpacing: 0.3,
+    fontWeight: '600',
+    letterSpacing: 0.2,
   },
   cardBody: {
-    padding: 14,
+    padding: 16,
     backgroundColor: '#FFFFFF',
   },
   chipsContainer: {
@@ -1260,56 +1270,60 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   chip: {
-    backgroundColor: '#F3F4F6',
+    backgroundColor: '#FFF0F5',
     paddingHorizontal: 12,
     paddingVertical: 6,
-    borderRadius: 8,
+    borderRadius: 16,
     borderWidth: 1,
-    borderColor: '#E5E7EB',
+    borderColor: '#F3DCE6',
   },
   chipText: {
-    color: '#4B5563',
+    color: '#5C384D',
     fontSize: 13,
-    fontWeight: '500',
+    fontWeight: '600',
   },
   bioText: {
-    fontSize: 15,
-    color: '#374151',
-    lineHeight: 22,
+    fontSize: 14,
+    color: '#4A3442',
+    lineHeight: 21,
     marginBottom: 10,
   },
   divider: {
     height: 1,
-    backgroundColor: '#F3F4F6',
-    marginBottom: 12,
-    marginHorizontal: -14,
+    backgroundColor: '#F8EEF2',
+    marginBottom: 14,
+    marginHorizontal: -16,
   },
   actionsContainer: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    gap: 8,
+    gap: 10,
   },
   primaryActionsRow: {
     flexDirection: 'row',
     flex: 1,
-    gap: 8,
+    gap: 10,
     justifyContent: 'flex-end',
   },
   actionBtnIconOnly: {
-    width: 48,
-    minHeight: 48,
-    borderRadius: 24,
-    backgroundColor: '#F3F4F6',
+    width: 50,
+    minHeight: 50,
+    borderRadius: 25,
+    backgroundColor: '#F9F4F7',
+    borderWidth: 1,
+    borderColor: '#EBDDE4',
     justifyContent: 'center',
     alignItems: 'center',
   },
   actionBtnTonal: {
-    minHeight: 48,
+    minHeight: 50,
     flex: 1,
-    paddingHorizontal: 8,
-    borderRadius: 24,
-    backgroundColor: '#FDF2F8',
+    paddingHorizontal: 12,
+    borderRadius: 25,
+    backgroundColor: '#FFF2F6',
+    borderWidth: 1.5,
+    borderColor: '#F4D4E1',
     flexDirection: 'row',
     justifyContent: 'center',
     alignItems: 'center',
@@ -1324,18 +1338,19 @@ const styles = StyleSheet.create({
   },
   actionBtnSolid: {
     flex: 1,
-    minHeight: 48,
-    borderRadius: 24,
+    minHeight: 50,
+    borderRadius: 25,
     backgroundColor: colors.action,
     flexDirection: 'row',
     justifyContent: 'center',
     alignItems: 'center',
     gap: 8,
     shadowColor: colors.action,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.25,
-    shadowRadius: 8,
-    elevation: 4,
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.35,
+    shadowRadius: 10,
+    elevation: 6,
+    paddingHorizontal: 12,
   },
   actionBtnSolidText: {
     flexShrink: 1,

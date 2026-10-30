@@ -167,7 +167,7 @@ export function mapProfile(bp: BackendProfile): Profile {
  * Backend /auth/me/ returns { data: { user: {...} } } structure.
  */
 export async function getMyProfile(): Promise<Profile> {
-  const res = await get<any>('/auth/me/');
+  const res = await get<any>('/member-auth/me/');
   // Handle both envelope { data: { user: {} } } and flat { id, ... } shapes
   const profile = res?.user ?? res?.data?.user ?? res?.data ?? res;
   const mapped = mapProfile(profile);
@@ -206,7 +206,7 @@ export async function updateMyProfile(
 
   delete currentPayload.name;
   // Never discard a rejected member edit and report a successful save.
-  await patch<BackendProfile>('/auth/me/', currentPayload as ProfileUpdatePayload);
+  await patch<BackendProfile>('/member-auth/me/', currentPayload as ProfileUpdatePayload);
   const saved = await getMyProfile();
   for (const key of ['state', 'religion'] as const) {
     if (payload[key] !== undefined && saved[key] !== payload[key]) {

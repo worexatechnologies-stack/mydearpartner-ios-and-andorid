@@ -92,7 +92,7 @@ function ProfileCard({
 
           {/* Gradient Overlay for Text Readability */}
           <LinearGradient
-            colors={['transparent', 'rgba(0,0,0,0.8)']}
+            colors={['transparent', 'rgba(26, 7, 18, 0.2)', 'rgba(26, 7, 18, 0.88)']}
             style={styles.gradientOverlay}
           />
 
@@ -223,26 +223,28 @@ const styles = StyleSheet.create({
     maxWidth: 600,
     ...Platform.select({
       ios: {
-        shadowColor: colors.primary,
-        shadowOffset: { width: 0, height: 12 },
-        shadowOpacity: 0.15,
-        shadowRadius: 24,
+        shadowColor: '#4A122E',
+        shadowOffset: { width: 0, height: 10 },
+        shadowOpacity: 0.14,
+        shadowRadius: 20,
       },
       android: { elevation: 8 },
     }),
   },
   card: {
     backgroundColor: colors.surface,
-    borderRadius: radii.xxl, // Extreme rounding
+    borderRadius: radii.xxl,
     overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: 'rgba(165, 55, 96, 0.12)',
   },
 
   // Immersive Photo
   photoWrapper: {
     width: '100%',
-    height: 420, // Slightly taller
+    height: 420,
     position: 'relative',
-    backgroundColor: colors.primaryLight, // Soft placeholder
+    backgroundColor: '#F9EAF0',
   },
   photo: {
     width: '100%',
@@ -260,17 +262,17 @@ const styles = StyleSheet.create({
     bottom: 0,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: 'rgba(0,0,0,0.3)',
+    backgroundColor: 'rgba(38, 10, 29, 0.45)',
   },
   lockText: {
-    color: 'rgba(255,255,255,0.9)',
+    color: 'rgba(255,255,255,0.95)',
     fontSize: fontSizes.sm,
     fontWeight: '600',
     marginTop: 8,
   },
   gradientOverlay: {
     position: 'absolute',
-    top: '30%', // Start fading in earlier
+    top: '30%',
     left: 0,
     right: 0,
     bottom: 0,
@@ -279,7 +281,7 @@ const styles = StyleSheet.create({
   // Badges & Actions (Top)
   topBadgesRow: {
     position: 'absolute',
-    top: spacing.lg, // More padding due to large border radius
+    top: spacing.lg,
     left: spacing.lg,
     right: spacing.lg,
     flexDirection: 'row',
@@ -289,10 +291,12 @@ const styles = StyleSheet.create({
   onlineBadge: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(255,255,255,0.25)', // Frosted glass look
+    backgroundColor: 'rgba(255,255,255,0.22)',
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: radii.pill,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.3)',
   },
   onlineDot: {
     width: 6,
@@ -309,7 +313,7 @@ const styles = StyleSheet.create({
   managedBadge: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(165, 55, 96, 0.85)', // brand primary translucent
+    backgroundColor: 'rgba(165, 55, 96, 0.9)',
     paddingHorizontal: 10,
     paddingVertical: 5,
     borderRadius: radii.pill,
@@ -323,10 +327,12 @@ const styles = StyleSheet.create({
   matchBadge: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(0,0,0,0.65)',
+    backgroundColor: 'rgba(58, 16, 48, 0.85)',
     paddingHorizontal: 10,
     paddingVertical: 5,
     borderRadius: radii.pill,
+    borderWidth: 1,
+    borderColor: 'rgba(233, 180, 76, 0.45)',
   },
   matchBadgeText: {
     color: colors.white,

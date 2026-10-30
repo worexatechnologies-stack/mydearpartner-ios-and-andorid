@@ -13,8 +13,9 @@ Do not replace production settings or URLs with this partial service.
    successful authentication, use `issue_session_tokens(user)` instead of every
    existing token issuer, including OTP, signup, social and web login. It returns
    access and refresh tokens carrying the same random `mdp_sid`. The local
-   `LoginView` is a reference username/password adapter, not a replacement for
-   production identifier/email/phone authentication.
+   `LoginView` validates member ID/username, email or registered mobile plus password,
+   and returns an SMS challenge. Adapt the complete backend's identifier and
+   verified-mobile lookup to its existing account/profile models.
 3. Use `SingleSessionAuthentication` on every protected API and the provided
    `SessionRefreshView` on `/api/v1/auth/token/refresh/`. Do not leave alternate
    refresh/token-issuance routes or stateless authentication classes as bypasses.
@@ -78,3 +79,52 @@ Run the module tests using Python 3.10+ and the requirements in `server/`:
 ```sh
 DJANGO_DEBUG=true python manage.py test account_sessions safety payments memberships config --noinput
 ```
+
+## Password followed by SMS OTP
+
+Deploy these endpoints into the complete authentication backend before rolling out
+the mobile update. This checkout is a partial backend; it must not replace the
+existing production service. Run `python manage.py migrate account_sessions` to
+apply `0003_userphone_otpchallenge`. Populate `UserPhone` only from existing,
+verified account mobile numbers, or adapt `resolve_user_phone` to that model.
+Accounts without a registered mobile cannot complete SMS login.
+
+- `POST /auth/login/` takes `{ "identifier": "member ID, email or mobile", "password": "..." }`.
+  It returns `{ "requires_otp": true, "challenge_id": "UUID", "phone_masked": "******3210" }`.
+  Password validation never returns tokens or replaces an existing session.
+- `POST /auth/login/verify/` takes `{ "challenge_id": "UUID", "otp": "123456" }`.
+  Only successful verification issues `{ "access": "...", "refresh": "...", "user": { "id": "..." } }`.
+- `POST /auth/login/resend-otp/` takes `{ "challenge_id": "UUID" }` and returns a
+  replacement challenge in the same format as login. The previous code stops working.
+
+Codes expire after five minutes and allow five incorrect attempts. Login and resend
+share a 60-second per-account send cooldown; requests also use the IP login throttle.
+Challenge verification and consumption serialize on the account row in PostgreSQL.
+SQLite unit tests cover state changes, not concurrent PostgreSQL execution.
+Only an explicit verified `UserPhone` record supplies the destination; a mobile
+username or an arbitrary phone attribute does not establish verification. Changing
+or revoking that record invalidates outstanding verification and resend requests.
+
+Configure `SMS_PROVIDER=renflair`, `RENFLAIR_API_KEY`, `RENFLAIR_SENDER_ID` and
+`RENFLAIR_DLT_TE_ID` in the backend environment using the provider's approved SMS
+template. No provider key or OTP belongs in the mobile app. Missing provider
+configuration returns a delivery error instead of pretending a code was sent.
+For automated tests use `TESTING=true`; for local development use
+`SMS_PROVIDER=mock`. Both store test messages in `account_sessions.sms.MOCK_SMS_OUTBOX`
+without delivering SMS. Real provider delivery still needs verification in the
+deployed environment. Audit any other token-issuing login routes in that service so
+they cannot bypass the password-plus-OTP requirement.
+
+### Local verification — 27 October 2026
+
+- `npm run check` passed: TypeScript, ESLint (0 errors, 264 warnings), all 464
+  mobile tests across 82 suites, and security-tool regression checks.
+- With Python 3.12 and the pinned `server/requirements.txt` installed, all 64
+  tests passed for `account_sessions safety payments memberships config`.
+  `manage.py makemigrations --check --dry-run` reported no changes.
+- OTP tests mock SMS delivery. They cover verified-phone enforcement, phone
+  changes/revocation, expiry, attempt limits, replay, resend cooldown, delivery
+  failure rollback, and session issuance only after verification.
+
+Complete-backend integration, real provider delivery, PostgreSQL concurrency and
+physical-device acceptance remain outstanding. No deployment was performed.

@@ -2,7 +2,7 @@ import { NavigatorScreenParams } from '@react-navigation/native';
 
 export type AuthStackParamList = {
   Welcome: undefined;
-  Login: undefined;
+  Login: { challenge?: import('../api/authService').LoginChallengeResponse; email?: string } | undefined;
   Signup: undefined;
   ForgotPassword: undefined;
 };

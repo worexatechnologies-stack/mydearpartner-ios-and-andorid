@@ -1,7 +1,9 @@
 /**
  * Jest setup for native module mocks used across the test suite.
  */
-import '@react-native-async-storage/async-storage/jest';
+jest.mock('@react-native-async-storage/async-storage', () =>
+  require('@react-native-async-storage/async-storage/jest'),
+);
 import 'react-native-gesture-handler/jestSetup';
 
 // Native Notifee is unavailable in the Jest runtime. Keep this mock limited to
@@ -124,6 +126,11 @@ jest.mock('react-native-fast-image', () => {
     low: 'low',
     normal: 'normal',
     high: 'high',
+  };
+  FastImageComponent.cacheControl = {
+    immutable: 'immutable',
+    web: 'web',
+    cacheOnly: 'cacheOnly',
   };
   FastImageComponent.preload = jest.fn();
   FastImageComponent.clearMemoryCache = jest.fn().mockResolvedValue(undefined);

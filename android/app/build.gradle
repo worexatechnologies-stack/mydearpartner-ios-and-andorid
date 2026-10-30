@@ -97,8 +97,8 @@ android {
         applicationId "com.mydearpartner"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 41
-        versionName "0.3.3"
+        versionCode 48
+        versionName "0.3.7"
         manifestPlaceholders = [usesCleartextTraffic: "true"]
         ndk {
             abiFilters "armeabi-v7a", "arm64-v8a", "x86", "x86_64"
@@ -113,7 +113,7 @@ android {
         }
         release {
             if (keystoreProperties['STORE_FILE']) {
-                storeFile file(keystoreProperties['STORE_FILE'])
+                storeFile new File(projectDir, keystoreProperties['STORE_FILE'])
             }
             storePassword keystoreProperties['STORE_PASSWORD']
             keyAlias keystoreProperties['KEY_ALIAS']

@@ -1,8 +1,9 @@
 // @refresh reset
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   Alert,
+  Keyboard,
   KeyboardAvoidingView,
   LayoutAnimation,
   Platform,
@@ -26,6 +27,7 @@ import * as ProfileService from '../api/profileService';
 import AppButton from '../components/AppButton';
 import AuthImage from '../components/AuthImage';
 import MotionView from '../components/MotionView';
+import ProfilePhotoViewerModal from '../components/ProfilePhotoViewerModal';
 import { useAuth } from '../context/AuthContext';
 import { RootStackParamList } from '../navigation/types';
 import { colors, shadow } from '../theme/theme';
@@ -136,6 +138,28 @@ export default function EditProfileScreen({ navigation }: Props) {
     const next = typeof action === 'function' ? action({ ...originalForm, ...previous }) : action;
     return Object.fromEntries(Object.entries(next).filter(([key, value]) => value !== originalForm[key]));
   });
+  const scrollViewRef = useRef<React.ElementRef<typeof ScrollView>>(null);
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
+
+  useEffect(() => {
+    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+
+    const showSub = Keyboard.addListener(showEvent, e => {
+      LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+      setKeyboardHeight(e.endCoordinates.height);
+    });
+    const hideSub = Keyboard.addListener(hideEvent, () => {
+      LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+      setKeyboardHeight(0);
+    });
+
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+    };
+  }, []);
+
   const [activeSection, setActiveSection] = useState('basic');
   const selectedSection = websiteProfileSections.find(
     section => section.id === activeSection,
@@ -190,6 +214,7 @@ export default function EditProfileScreen({ navigation }: Props) {
   );
   const [maxPhotos, setMaxPhotos] = useState(MAX_PHOTOS);
   const [loadingGallery, setLoadingGallery] = useState(true);
+  const [viewerPhoto, setViewerPhoto] = useState<{ uri: string; index: number; id?: string } | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -479,14 +504,20 @@ export default function EditProfileScreen({ navigation }: Props) {
         </View>
 
         <ScrollView
+          ref={scrollViewRef}
           keyboardShouldPersistTaps="handled"
-          keyboardDismissMode="on-drag"
-          scrollEventThrottle={1}
+          keyboardDismissMode={Platform.OS === 'ios' ? 'on-drag' : 'none'}
+          scrollEventThrottle={16}
           contentContainerStyle={[
             styles.content,
             isTablet && styles.constrained,
             isSmallDevice && styles.contentSmall,
-            { paddingBottom: insets.bottom + 130 },
+            {
+              paddingBottom:
+                insets.bottom +
+                140 +
+                (Platform.OS === 'android' ? keyboardHeight : 0),
+            },
           ]}
           showsVerticalScrollIndicator={false}
         >
@@ -525,7 +556,14 @@ export default function EditProfileScreen({ navigation }: Props) {
                   contentContainerStyle={styles.photoRow}
                 >
                   {localPhotos.map((uri, index) => (
-                    <View key={index} style={styles.photoTile}>
+                    <TouchableOpacity
+                      key={index}
+                      style={styles.photoTile}
+                      onPress={() => setViewerPhoto({ uri, index, id: photoIds[uri] })}
+                      activeOpacity={0.85}
+                      accessibilityRole="button"
+                      accessibilityLabel={`View photo ${index + 1}`}
+                    >
                       <AuthImage source={{ uri }} style={styles.photoTileImg} />
                       {uploadingPhotoIndex === index && (
                         <View style={styles.photoUploadOverlay}>
@@ -549,7 +587,7 @@ export default function EditProfileScreen({ navigation }: Props) {
                       >
                         <Icon name="close" size={14} color="#FFF" />
                       </TouchableOpacity>
-                    </View>
+                    </TouchableOpacity>
                   ))}
 
                   {localPhotos.length < maxPhotos && (
@@ -641,6 +679,7 @@ export default function EditProfileScreen({ navigation }: Props) {
                         }
                         multiline={field.kind === 'multiline'}
                         numberOfLines={field.kind === 'multiline' ? 4 : 1}
+                        scrollEnabled={field.kind === 'multiline' ? false : undefined}
                         keyboardType={
                           field.kind === 'number' ? 'number-pad' : 'default'
                         }
@@ -880,7 +919,16 @@ export default function EditProfileScreen({ navigation }: Props) {
       </KeyboardAvoidingView>
 
       {/* ── Sticky Bottom Save Bar ── */}
-      <View style={[styles.floatingSaveContainer, { paddingBottom: Math.max(insets.bottom, 14) }]}>
+      <View
+        style={[
+          styles.floatingSaveContainer,
+          {
+            bottom: keyboardHeight,
+            paddingBottom:
+              keyboardHeight > 0 ? 10 : Math.max(insets.bottom, 14),
+          },
+        ]}
+      >
         <View style={[styles.saveBtnWrapper, isTablet && styles.constrained]}>
           <AppButton
             title="Save Profile"
@@ -891,6 +939,28 @@ export default function EditProfileScreen({ navigation }: Props) {
           />
         </View>
       </View>
+
+      {/* Profile Photo Viewer Modal */}
+      <ProfilePhotoViewerModal
+        visible={Boolean(viewerPhoto)}
+        onClose={() => setViewerPhoto(null)}
+        photoUri={viewerPhoto?.uri}
+        photoId={viewerPhoto?.id}
+        onPhotoUpdated={newUri => {
+          if (viewerPhoto) {
+            setLocalPhotos(prev =>
+              prev.map((p, i) => (i === viewerPhoto.index ? newUri : p)),
+            );
+          }
+        }}
+        onPhotoDeleted={() => {
+          if (viewerPhoto) {
+            setLocalPhotos(prev =>
+              prev.filter((_, i) => i !== viewerPhoto.index),
+            );
+          }
+        }}
+      />
     </View>
   );
 }
@@ -1109,7 +1179,7 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   aboutInput: {
-    height: 110,
+    minHeight: 110,
     textAlignVertical: 'top',
     paddingTop: 12,
   },

@@ -64,7 +64,7 @@ test('profile edits use website field names and preserve explicit clears', async
   (get as jest.Mock).mockResolvedValue({ user: { id: 'profile', state: '', religion: '' } });
   await updateMyProfile({ city: '', profession: 'Engineer', education: 'Degree', state: '', religion: '' });
   expect(patch).toHaveBeenCalledTimes(1);
-  expect(patch).toHaveBeenCalledWith('/auth/me/', {
+  expect(patch).toHaveBeenCalledWith('/member-auth/me/', {
     work_location: '', occupation: 'Engineer', highest_education: 'Degree', state: '', religion: '',
   });
 });

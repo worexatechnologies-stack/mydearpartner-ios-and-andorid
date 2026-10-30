@@ -170,7 +170,7 @@ export default function SignupScreen() {
         mobile: phone.replace(/\D/g, ''),
         first_name,
         last_name,
-        managed_by: profileFor,
+        profile_created_by: profileFor,
         mother_tongue: motherTongue,
         city: city.trim(),
         gender: gender,
@@ -185,8 +185,29 @@ export default function SignupScreen() {
             cohort: city.trim() || 'unknown',
           })
           .catch(() => {});
+      } else if (result.challenge) {
+        await saveSavedCredentials(email.trim(), password).catch(() => {});
+        navigation.navigate('Login', { email: email.trim(), challenge: result.challenge });
+      } else if (result.accountCreated) {
+        Alert.alert(
+          'Account created',
+          result.error || 'Sign in to finish setting up your account.',
+          [{ text: 'Sign In', onPress: () => navigation.navigate('Login', { email: email.trim() }) }],
+        );
       } else {
-        Alert.alert('Could not create account', result.error || 'Please try again.');
+        const error = result.error || 'Please try again.';
+        if (/mobile_number.*already registered|mobile number is already registered/i.test(error)) {
+          Alert.alert(
+            'Mobile number already registered',
+            'An account already uses this number. Sign in with that account, or use a different mobile number.',
+            [
+              { text: 'Use a different number', style: 'cancel' },
+              { text: 'Sign In', onPress: () => navigation.navigate('Login') },
+            ],
+          );
+        } else {
+          Alert.alert('Could not create account', error);
+        }
       }
     } finally {
       submitting.current = false;

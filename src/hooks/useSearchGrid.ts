@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
 import { LayoutChangeEvent, useWindowDimensions } from 'react-native';
 
 export function searchGridLayout(width: number, fontScale = 1) {
@@ -19,8 +19,14 @@ export function searchGridLayout(width: number, fontScale = 1) {
 export function useSearchGrid() {
   const { width, fontScale } = useWindowDimensions();
   const [measuredWidth, setMeasuredWidth] = useState<number | null>(null);
+  const onLayout = useCallback((event: LayoutChangeEvent) => {
+    const nextWidth = Math.round(event.nativeEvent.layout.width);
+    if (nextWidth > 0) {
+      setMeasuredWidth(prev => (prev === nextWidth ? prev : nextWidth));
+    }
+  }, []);
   return {
     ...searchGridLayout(measuredWidth ?? width, fontScale),
-    onLayout: (event: LayoutChangeEvent) => setMeasuredWidth(event.nativeEvent.layout.width),
+    onLayout,
   };
 }

@@ -1,5 +1,22 @@
 # Production repairs
 
+## Password and SMS OTP login
+
+[Password login OTP repair](PASSWORD_LOGIN_OTP.md) addresses the mobile login
+contract mismatch shown on 27 October. The latest repository already implements
+`requires_two_factor` and `/auth/otp/verify/`; the mobile app now uses that contract.
+The older `password-login-otp.patch` targets a superseded backend baseline and
+must not be applied to current production. Real SMS acceptance remains outstanding.
+
+## Final release audit
+
+[Release readiness repairs](RELEASE_READINESS.md) adds staging payment isolation,
+strict environment selection, the DRF 3.18.2 security update and a website timer
+type repair. Apply its patch after the combined, discovery and saved-search
+patches in the documented order. It has been tested locally and has not been
+deployed. The release decision is in
+[the 23 October audit](../release/FINAL_RELEASE_AUDIT_2026-10-23.md).
+
 The latest combined repair is [platform-hardening.patch](platform-hardening.patch).
 Read [its scope, validation and application instructions](PLATFORM_HARDENING.md).
 It includes the two earlier patches; do not stack them on top of it.

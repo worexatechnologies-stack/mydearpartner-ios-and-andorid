@@ -4,7 +4,7 @@ import {
 } from '@react-navigation/bottom-tabs';
 import { CompositeScreenProps, useFocusEffect } from '@react-navigation/native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
-import React, { useCallback, useEffect, useRef } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Animated,
   Platform,
@@ -27,6 +27,7 @@ import { useReducedMotion } from '../../hooks/useReducedMotion';
 import { usePlanAllowance } from '../../utils/planAllowance';
 
 import ProfileCompletionBanner from '../../components/ProfileCompletionBanner';
+import ProfilePhotoViewerModal from '../../components/ProfilePhotoViewerModal';
 import { FLOATING_TAB_BAR_BOTTOM } from '../../navigation/tabBarLayout';
 import { MainTabParamList, RootStackParamList } from '../../navigation/types';
 import { colors, radii, shadow, typeScale } from '../../theme/theme';
@@ -38,6 +39,7 @@ type Props = CompositeScreenProps<
 
 export default function MyProfileScreen({ navigation }: Props) {
   const { currentUser, logout, refreshCurrentUser } = useAuth();
+  const [photoModalVisible, setPhotoModalVisible] = useState(false);
   const {
     receivedInterests,
     sentInterests,
@@ -218,11 +220,20 @@ export default function MyProfileScreen({ navigation }: Props) {
         />
         {/* Profile Info Section */}
         <View style={styles.profileInfoSection}>
-          <View style={styles.avatarContainer}>
+          <TouchableOpacity
+            style={styles.avatarContainer}
+            onPress={() => setPhotoModalVisible(true)}
+            activeOpacity={0.85}
+            accessibilityRole="button"
+            accessibilityLabel="View and edit profile photo"
+          >
             <AuthImage
               source={{ uri: profile.photo }}
               style={[styles.avatarMain, isPremium && styles.avatarMainGold]}
             />
+            <View style={styles.avatarEditBadge}>
+              <Icon name="camera" size={13} color="#FFF" />
+            </View>
             {profile.isVerified && (
               <Animated.View
                 style={[
@@ -244,7 +255,7 @@ export default function MyProfileScreen({ navigation }: Props) {
                 <Icon name="star" size={14} color="#FFF" />
               </View>
             )}
-          </View>
+          </TouchableOpacity>
 
           <Text style={styles.profileName}>
             {profile.name}
@@ -766,6 +777,14 @@ export default function MyProfileScreen({ navigation }: Props) {
           </View>
         </View>
       </Animated.ScrollView>
+
+      {/* Profile Photo Viewer & Editor Modal */}
+      <ProfilePhotoViewerModal
+        visible={photoModalVisible}
+        onClose={() => setPhotoModalVisible(false)}
+        photoUri={profile.photo}
+        photoId={profile.photoIds?.[profile.photo]}
+      />
     </ScreenContainer>
   );
 }
@@ -847,6 +866,20 @@ const styles = StyleSheet.create({
   avatarContainer: {
     position: 'relative',
     marginBottom: 12,
+  },
+  avatarEditBadge: {
+    position: 'absolute',
+    bottom: -2,
+    right: -2,
+    backgroundColor: colors.primary,
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: '#FFFFFF',
+    ...shadow.sm,
   },
   avatarMain: {
     width: 96,

@@ -1,3 +1,4 @@
+from __future__ import annotations
 import logging
 import uuid
 from django.conf import settings
@@ -6,9 +7,50 @@ from django.db import transaction
 from django.utils import timezone
 from django.utils.module_loading import import_string
 from rest_framework_simplejwt.tokens import RefreshToken
-from .models import AccountSession, SessionNotice
+from datetime import timedelta
+import secrets
+from django.contrib.auth.hashers import check_password, make_password
+from .models import AccountSession, OtpChallenge, SessionNotice, UserPhone
 
 logger = logging.getLogger(__name__)
+
+
+def generate_otp() -> str:
+    """Generate a cryptographically secure 6-digit numeric OTP."""
+    # secrets.randbelow is cryptographically secure
+    return f"{secrets.randbelow(1_000_000):06d}"
+
+
+def resolve_user_phone(user) -> str | None:
+    """Use only the account's explicitly verified phone record."""
+    return UserPhone.objects.filter(user=user, is_verified=True).values_list('phone_number', flat=True).first()
+
+
+def create_otp_challenge(user, phone_number: str, ip_address: str | None = None) -> tuple[OtpChallenge, str]:
+    """
+    Create a short-lived opaque verification challenge with a cryptographically secure,
+    securely hashed 6-digit OTP. 5 minutes expiration, 60s resend cooldown.
+    """
+    now = timezone.now()
+    raw_otp = generate_otp()
+    otp_hash = make_password(raw_otp)
+
+    challenge = OtpChallenge.objects.create(
+        user=user,
+        phone_number=phone_number,
+        otp_hash=otp_hash,
+        expires_at=now + timedelta(minutes=5),
+        resend_available_at=now + timedelta(seconds=60),
+        ip_address=ip_address,
+    )
+    return challenge, raw_otp
+
+
+def verify_challenge_otp(challenge: OtpChallenge, submitted_otp: str) -> bool:
+    """Check submitted OTP against the stored cryptographic hash."""
+    if not submitted_otp or len(submitted_otp.strip()) != 6:
+        return False
+    return check_password(submitted_otp.strip(), challenge.otp_hash)
 
 
 def dispatch_notice(notice_id):
@@ -44,3 +86,4 @@ def issue_session_tokens(user):
             notice = SessionNotice.objects.create(user=user, session_id=old_sid)
             transaction.on_commit(lambda: dispatch_notice(notice.pk))
         return {'access': str(refresh.access_token), 'refresh': str(refresh)}
+

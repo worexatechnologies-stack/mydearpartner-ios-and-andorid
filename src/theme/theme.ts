@@ -35,6 +35,23 @@ export const colors = {
   border: '#E9E2E6',
   divider: '#F3EEF1',
 
+  // Luxury Warm Accents
+  gold: '#D4AF37',
+  goldLight: '#FDF7E7',
+  goldMuted: '#E9B44C',
+  goldBorder: '#F3E2B8',
+  goldInk: '#6B4E00',
+
+  // Glassmorphism & Scrim
+  glass: 'rgba(255, 255, 255, 0.88)',
+  glassBorder: 'rgba(255, 255, 255, 0.4)',
+  glassDark: 'rgba(26, 7, 18, 0.82)',
+  scrimDark: 'rgba(26, 7, 18, 0.88)',
+  scrimLight: 'rgba(26, 7, 18, 0.2)',
+  plumDark: '#260A1D',
+  plumDeep: '#1A0712',
+  roseGlow: 'rgba(217, 20, 90, 0.18)',
+
   // Semantic
   success: '#10B981', // Modern emerald green
   successLight: '#D1FAE5',
@@ -46,15 +63,23 @@ export const colors = {
   infoLight: '#DBEAFE',
 
   // Utilities
-  overlay: 'rgba(53, 35, 42, 0.7)',
+  overlay: 'rgba(38, 10, 29, 0.72)',
   white: '#FFFFFF',
   black: '#000000',
   transparent: 'transparent',
 
   // Gradients
-  gradientPrimary: ['#A53760', '#843453'],
+  gradientPrimary: ['#99254F', '#701938'],
+  gradientLuxury: ['#4A122E', '#240A18'],
+  gradientRose: ['#FF2D78', '#D9145A'],
   gradientDark: ['#52334F', '#302432'],
-  gradientGold: ['#FBBF24', '#F59E0B'],
+  gradientGold: ['#F5C542', '#D4AF37'],
+  gradientGlass: ['rgba(255, 255, 255, 0.94)', 'rgba(255, 255, 255, 0.78)'],
+  gradientCardScrim: [
+    'transparent',
+    'rgba(26, 7, 18, 0.15)',
+    'rgba(26, 7, 18, 0.88)',
+  ],
 };
 
 export const lightColors = colors;
@@ -210,12 +235,32 @@ export const shadow = {
   }),
   glass: Platform.select({
     ios: {
-      shadowColor: '#000',
+      shadowColor: '#4A122E',
       shadowOffset: { width: 0, height: 8 },
-      shadowOpacity: 0.04,
-      shadowRadius: 12,
+      shadowOpacity: 0.08,
+      shadowRadius: 16,
     },
-    android: { elevation: 0 },
+    android: { elevation: 2 },
+    default: {},
+  }),
+  luxury: Platform.select({
+    ios: {
+      shadowColor: '#4A122E',
+      shadowOffset: { width: 0, height: 10 },
+      shadowOpacity: 0.12,
+      shadowRadius: 20,
+    },
+    android: { elevation: 6 },
+    default: {},
+  }),
+  floatingPill: Platform.select({
+    ios: {
+      shadowColor: '#5A1536',
+      shadowOffset: { width: 0, height: 8 },
+      shadowOpacity: 0.14,
+      shadowRadius: 18,
+    },
+    android: { elevation: 8 },
     default: {},
   }),
 };

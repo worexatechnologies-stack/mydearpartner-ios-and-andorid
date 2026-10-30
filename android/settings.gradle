@@ -1,5 +1,16 @@
 pluginManagement { includeBuild("../node_modules/@react-native/gradle-plugin") }
 plugins { id("com.facebook.react.settings") }
+
+// Autolinking caches absolute paths, but its normal cache key only tracks file contents.
+// Refresh it when a checkout is moved or copied without changing the lockfiles.
+def autolinkingConfig = file("build/generated/autolinking/autolinking.json")
+if (autolinkingConfig.exists()) {
+    def cachedRoot = new groovy.json.JsonSlurper().parse(autolinkingConfig).root
+    if (cachedRoot != file("..").canonicalPath) {
+        autolinkingConfig.delete()
+    }
+}
+
 extensions.configure(com.facebook.react.ReactSettingsExtension){ ex -> ex.autolinkLibrariesFromCommand() }
 rootProject.name = 'MyDearPartner'
 include ':app'

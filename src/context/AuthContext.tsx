@@ -52,6 +52,14 @@ import {
   StorageKeys,
 } from '../utils/storage';
 
+export type LoginOutcome =
+  | { ok: true; challenge?: never }
+  | { ok: false; challenge?: AuthService.LoginChallengeResponse; error?: string };
+
+export type SignupOutcome =
+  | { ok: true; challenge?: never; accountCreated?: never }
+  | { ok: false; challenge?: AuthService.LoginChallengeResponse; error?: string; accountCreated?: boolean };
+
 interface AuthContextValue {
   isLoading: boolean;
   sessionError: string | null;
@@ -60,7 +68,10 @@ interface AuthContextValue {
   login: (
     email: string,
     password: string,
-  ) => Promise<{ ok: boolean; error?: string }>;
+  ) => Promise<LoginOutcome>;
+  verifyLoginOtp: (otp: string) => Promise<LoginOutcome>;
+  resendLoginOtp: () => Promise<AuthService.LoginChallengeResponse>;
+  cancelLogin: () => void;
   signup: (
     email: string,
     password: string,
@@ -71,13 +82,13 @@ interface AuthContextValue {
       mobile?: string;
       first_name?: string;
       last_name?: string;
-      managed_by?: string;
+      profile_created_by?: string;
       mother_tongue?: string;
       city?: string;
       gender?: string;
       referral_code?: string;
     },
-  ) => Promise<{ ok: boolean; error?: string }>;
+  ) => Promise<SignupOutcome>;
   logout: () => Promise<void>;
   completeProfile: (profile: Omit<Profile, 'id'>) => Promise<void>;
   updateProfile: (profile: Partial<Profile>) => Promise<void>;
@@ -172,6 +183,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [isLoading, setIsLoading] = useState(true);
   const [sessionError, setSessionError] = useState<string | null>(null);
   const sessionRevision = useRef(0);
+  const pendingLogin = useRef<{
+    challenge: AuthService.LoginChallengeResponse;
+    email: string;
+    password: string;
+    revision: number;
+  } | null>(null);
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   // Keep a ref for the device push token so we can pass it to logout
   const pushTokenRef = useRef<string | null>(null);
@@ -179,6 +196,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   // Register global 401 handler — called by apiClient when token refresh fails
   useEffect(() => {
     return registerUnauthenticatedHandler(() => {
+      pendingLogin.current = null;
       sessionRevision.current += 1;
       setSessionError(null);
       setIsLoading(false);
@@ -228,6 +246,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   // An offline launch is recoverable without forcing the user to log in again.
   const retrySession = useCallback(async () => {
+    pendingLogin.current = null;
     const revision = ++sessionRevision.current;
     setIsLoading(true);
     setSessionError(null);
@@ -278,53 +297,101 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return () => { sessionRevision.current += 1; };
   }, [retrySession]);
 
-  // ─── Login ───────────────────────────────────────────────────────────────
-  const login = useCallback(
-    async (
-      email: string,
-      password: string,
-    ): Promise<{ ok: boolean; error?: string }> => {
-      try {
-        const revision = ++sessionRevision.current;
-        const isCurrent = () => revision === sessionRevision.current;
-        const response = await AuthService.login({ email, password }, isCurrent);
-        if (!isCurrent()) return { ok: false, error: 'Sign-in was cancelled. Please try again.' };
-        // Only a missing profile means setup is needed; outages must remain errors.
-        const profile = await ProfileService.getMyProfile().catch(err => {
-          if (err?.status === 404) return emptyProfile(response.user.id);
-          throw err;
-        });
+  // A password challenge must never load a profile or open an authenticated session.
+  const completeLogin = useCallback(async (
+    response: AuthService.LoginResult,
+    email: string,
+    revision: number,
+    password = '',
+  ): Promise<LoginOutcome> => {
+    const isCurrent = () => revision === sessionRevision.current;
+    if (!isCurrent()) return { ok: false, error: 'Sign-in was cancelled. Please try again.' };
+    if ('requires_otp' in response) {
+      pendingLogin.current = { challenge: response, email, password, revision };
+      return { ok: false, challenge: response };
+    }
+    // Only a missing profile means setup is needed; outages must remain errors.
+    const profile = await ProfileService.getMyProfile().catch(err => {
+      if (err?.status === 404) return emptyProfile(response.user.id);
+      throw err;
+    });
 
-        if (!isCurrent()) return { ok: false, error: 'Sign-in was cancelled. Please try again.' };
-        const isComplete = isProfileComplete(profile);
-        
+    if (!isCurrent()) return { ok: false, error: 'Sign-in was cancelled. Please try again.' };
+    const isComplete = isProfileComplete(profile);
 
-        const user = buildUser(response.user.id, email, isComplete, profile);
-        const stored = await loadTokens();
-        const memberId = stored?.accessToken
-          ? getMemberUserIdFromToken(stored.accessToken)
-          : null;
-        if (!isCurrent()) return { ok: false, error: 'Authentication was cancelled. Please try again.' };
-        if (memberId) await saveUserIds(profile.id, memberId);
-        if (!isCurrent()) return { ok: false, error: 'Authentication was cancelled. Please try again.' };
-        await initializeMessagingCrypto();
-        if (!isCurrent()) return { ok: false, error: 'Authentication was cancelled. Please try again.' };
+    const user = buildUser(response.user.id, email, isComplete, profile);
+    const stored = await loadTokens();
+    const memberId = stored?.accessToken
+      ? getMemberUserIdFromToken(stored.accessToken)
+      : null;
+    if (!isCurrent()) return { ok: false, error: 'Authentication was cancelled. Please try again.' };
+    if (memberId) await saveUserIds(profile.id, memberId);
+    if (!isCurrent()) return { ok: false, error: 'Authentication was cancelled. Please try again.' };
+    await initializeMessagingCrypto();
+    if (!isCurrent()) return { ok: false, error: 'Authentication was cancelled. Please try again.' };
 
-        setCurrentUser(user);
-        // Register only after secure identity restoration.
-        registerPushNotifications();
+    setCurrentUser(user);
+    // Register only after secure identity restoration.
+    registerPushNotifications();
 
-        return { ok: true };
-      } catch (err: any) {
-        const message =
-          typeof err?.message === 'string'
-            ? err.message
-            : 'Incorrect email or password. Please try again.';
-        return { ok: false, error: message };
-      }
-    },
-    [registerPushNotifications],
-  );
+    pendingLogin.current = null;
+    return { ok: true };
+  }, [registerPushNotifications]);
+
+  const login = useCallback(async (email: string, password: string): Promise<LoginOutcome> => {
+    const revision = ++sessionRevision.current;
+    pendingLogin.current = null;
+    try {
+      const response = await AuthService.login({ email, password }, () => revision === sessionRevision.current);
+      return await completeLogin(response, email, revision, password);
+    } catch (error: any) {
+      return { ok: false, error: error?.message || 'Could not sign in. Please try again.' };
+    }
+  }, [completeLogin]);
+
+  const verifyLoginOtp = useCallback(async (otp: string): Promise<LoginOutcome> => {
+    const pending = pendingLogin.current;
+    if (!pending || pending.revision !== sessionRevision.current) {
+      return { ok: false, error: 'Please enter your ID and password again.' };
+    }
+    try {
+      const payload = pending.challenge.requires_two_factor
+        ? { mobile_number: pending.challenge.mobile_number, otp }
+        : { challenge_id: pending.challenge.challenge_id, otp };
+      const response = await AuthService.verifyLoginOtp(payload, () => pending.revision === sessionRevision.current);
+      return await completeLogin(response, pending.email, pending.revision);
+    } catch (error: any) {
+      return { ok: false, error: error?.message || 'Could not verify the code. Please try again.' };
+    }
+  }, [completeLogin]);
+
+  const resendLoginOtp = useCallback(async () => {
+    const pending = pendingLogin.current;
+    if (!pending || pending.revision !== sessionRevision.current) {
+      throw new Error('Please enter your ID and password again.');
+    }
+    // The complete backend sends another TWO_FACTOR code through password login.
+    // Keep the password only in this pending in-memory attempt until completion
+    // or cancellation; never send a TWO_FACTOR code through a recovery endpoint.
+    const response = pending.challenge.requires_two_factor
+      ? await AuthService.login({ email: pending.email, password: pending.password },
+        () => pending.revision === sessionRevision.current)
+      : await AuthService.resendLoginOtp(pending.challenge.challenge_id);
+    if (pending !== pendingLogin.current || pending.revision !== sessionRevision.current) {
+      throw new Error('Sign-in was cancelled. Please try again.');
+    }
+    if (!('requires_otp' in response)) {
+      throw new Error('Please sign in again.');
+    }
+    const challenge: AuthService.LoginChallengeResponse = response;
+    pendingLogin.current = { ...pending, challenge };
+    return challenge;
+  }, []);
+
+  const cancelLogin = useCallback(() => {
+    pendingLogin.current = null;
+    sessionRevision.current += 1;
+  }, []);
 
   // ─── Signup ──────────────────────────────────────────────────────────────
   const signup = useCallback(
@@ -338,27 +405,40 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         mobile?: string;
         first_name?: string;
         last_name?: string;
-        managed_by?: string;
+        profile_created_by?: string;
         mother_tongue?: string;
         city?: string;
         gender?: string;
         referral_code?: string;
       },
-    ): Promise<{ ok: boolean; error?: string }> => {
+    ): Promise<SignupOutcome> => {
       if (!email.trim() || !password) {
         return { ok: false, error: 'Email and password are required.' };
       }
       try {
+        pendingLogin.current = null;
         const revision = ++sessionRevision.current;
         const isCurrent = () => revision === sessionRevision.current;
-        const response = await AuthService.register({ email, password, ...extraData }, isCurrent);
+        const response = await AuthService.register({
+          email,
+          password,
+          ...extraData,
+          gender: extraData?.gender?.trim().toLowerCase(),
+        }, isCurrent);
         if (!isCurrent()) return { ok: false, error: 'Sign-up was cancelled. Please try again.' };
+
+        if ('requires_otp' in response) {
+          const loginOutcome = await completeLogin(response, email, revision, password);
+          return loginOutcome.ok
+            ? { ok: true }
+            : { ...loginOutcome, accountCreated: true };
+        }
         
         // Update profile with remaining fields not handled directly by register if they exist
-        if (extraData?.managed_by || extraData?.mother_tongue || extraData?.city || extraData?.gender) {
+        if (extraData?.profile_created_by || extraData?.mother_tongue || extraData?.city || extraData?.gender) {
           try {
             await ProfileService.updateMyProfile({
-              managed_by: extraData.managed_by as any,
+              profile_created_by: extraData.profile_created_by,
               mother_tongue: extraData.mother_tongue,
               city: extraData.city,
               current_city: extraData.city,
@@ -370,7 +450,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           }
         }
 
-        const profile = emptyProfile(response.user.id);
+        const stored = await loadTokens();
+        const memberId = stored?.accessToken
+          ? getMemberUserIdFromToken(stored.accessToken)
+          : null;
+        const userId = response.user?.id || memberId;
+        if (!userId) {
+          return { ok: false, error: 'Account created, but we could not identify the new account. Please sign in.' };
+        }
+
+        const profile = emptyProfile(userId);
         // Pre-fill profile with known data
         if (extraData?.first_name || extraData?.last_name) {
           profile.name = `${extraData.first_name || ''} ${extraData.last_name || ''}`.trim();
@@ -378,11 +467,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         if (extraData?.city) profile.city = extraData.city;
         if (extraData?.gender) profile.gender = extraData.gender as any;
         
-        const user = buildUser(response.user.id, email, false, profile);
-        const stored = await loadTokens();
-        const memberId = stored?.accessToken
-          ? getMemberUserIdFromToken(stored.accessToken)
-          : null;
+        const user = buildUser(userId, email, false, profile);
         if (!isCurrent()) return { ok: false, error: 'Authentication was cancelled. Please try again.' };
         if (memberId) await saveUserIds(profile.id, memberId);
         if (!isCurrent()) return { ok: false, error: 'Authentication was cancelled. Please try again.' };
@@ -402,11 +487,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return { ok: false, error: message };
       }
     },
-    [registerPushNotifications],
+    [completeLogin, registerPushNotifications],
   );
 
   // ─── Logout ──────────────────────────────────────────────────────────────
   const logout = useCallback(async () => {
+    pendingLogin.current = null;
     sessionRevision.current += 1;
     setIsLoading(true);
     setSessionError(null);
@@ -719,6 +805,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       retrySession,
       currentUser,
       login,
+      verifyLoginOtp,
+      resendLoginOtp,
+      cancelLogin,
       signup,
       logout,
       completeProfile,
@@ -731,6 +820,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       retrySession,
       currentUser,
       login,
+      verifyLoginOtp,
+      resendLoginOtp,
+      cancelLogin,
       signup,
       logout,
       completeProfile,

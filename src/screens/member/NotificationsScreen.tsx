@@ -8,11 +8,11 @@ import {
   Text,
   TouchableOpacity,
   View,
-  Image,
   DeviceEventEmitter,
 } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import Icon from 'react-native-vector-icons/Ionicons';
+import AuthImage from '../../components/AuthImage';
 import ScreenContainer from '../../components/ScreenContainer';
 import NotificationDiagnosticsCard from '../../components/NotificationDiagnosticsCard';
 import { useAppData } from '../../context/AppDataContext';
@@ -445,7 +445,7 @@ export default function NotificationsScreen({ navigation }: Props) {
               {/* Left Avatar / Type Icon */}
               <View style={styles.avatarWrapper}>
                 {item.fallbackPhoto ? (
-                  <Image
+                  <AuthImage
                     source={{ uri: item.fallbackPhoto }}
                     style={styles.avatarImage}
                     resizeMode="cover"

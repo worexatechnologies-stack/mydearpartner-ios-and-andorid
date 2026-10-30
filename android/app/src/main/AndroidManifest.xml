@@ -7,6 +7,9 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.VIBRATE" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <!-- Required for Firebase Analytics and Crashlytics on Android 13+ (API 33+).
+         Without this, the advertising ID is zeroed out for apps targeting API 33+. -->
+    <uses-permission android:name="com.google.android.gms.permission.AD_ID" />
 
     <application
       android:name=".MainApplication"

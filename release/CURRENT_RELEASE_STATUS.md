@@ -1,3 +1,25 @@
+# Current release decision — 23 October 2026
+
+**NOT READY for Google Play or the Apple App Store.** The current evidence is in
+[the final release audit](FINAL_RELEASE_AUDIT_2026-10-23.md), which supersedes the
+older verification summary retained below.
+
+Verified: 454 mobile tests, 50 supplementary Django tests, 304 prepared full-backend
+tests (one PostgreSQL-only skip), 29 mocked-provider notification tests and 46
+website tests. Signed Android APK/AAB generation, local bundle/signature checks
+and unsigned iOS Release simulator compilation passed. Signed iOS distribution,
+real-device/provider acceptance, store billing, deployed backend/website repairs
+and the chat confidentiality migration remain release blockers. Raw npm and
+full-backend Python audits still report the documented residual findings; full
+Django deploy checks retain schema/HSTS warnings.
+
+No deployment or store publication was performed. Review the
+[rollback plan](ROLLBACK_PLAN_2026-10-23.md) before any approved staging rollout.
+
+---
+
+The previous dated status is preserved for history:
+
 # Release status — 22 October 2026
 
 **Production acceptance is incomplete.** Successful local tests and signed Android

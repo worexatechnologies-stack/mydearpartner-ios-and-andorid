@@ -115,3 +115,32 @@
  djangorestframework-simplejwt==5.5.1
  psycopg2-binary==2.9.12
  django-filter==25.1
+--- a/frontend/legacy/pages/admin/AdminTicketsPage.tsx
++++ b/frontend/legacy/pages/admin/AdminTicketsPage.tsx
+@@ -168,7 +168,7 @@
+   const [toast, setToast] = useState<{ message: string; tone: 'success' | 'error' } | null>(null);
+ 
+   const messagesRef = useRef<HTMLDivElement>(null);
+-  const searchTimer = useRef<NodeJS.Timeout | null>(null);
++  const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+   const pageScrollRef = useRef(0);
+ 
+   const preservePageScroll = () => { pageScrollRef.current = window.scrollY; };
+--- /dev/null
++++ b/backend/apps/accounts/tests/test_parser_charset.py
+@@ -0,0 +1,15 @@
++import io
++
++import pytest
++from rest_framework.exceptions import ParseError
++from rest_framework.parsers import JSONParser
++
++
++@pytest.mark.parametrize('charset', ['bz2_codec', 'zlib_codec', 'base64_codec', 'hex_codec', 'rot_13'])
++def test_json_parser_rejects_non_text_codecs_before_decoding(charset):
++    with pytest.raises(ParseError, match='Unsupported charset'):
++        JSONParser().parse(io.BytesIO(b'{}'), parser_context={'encoding': charset})
++
++
++def test_json_parser_still_accepts_utf8():
++    assert JSONParser().parse(io.BytesIO(b'{"ok":true}'), parser_context={'encoding': 'utf-8'}) == {'ok': True}

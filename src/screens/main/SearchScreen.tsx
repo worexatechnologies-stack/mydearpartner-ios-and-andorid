@@ -19,6 +19,7 @@ import {
   Alert,
   Animated,
   FlatList,
+  Keyboard,
   Modal,
   Platform,
   RefreshControl,
@@ -449,6 +450,7 @@ function FilterSection({
 export default function SearchScreen({ navigation, route }: Props) {
   const { currentUser } = useAuth();
   const {
+    allProfiles,
     isShortlisted,
     isBlockedByMe,
     toggleShortlist,
@@ -820,10 +822,24 @@ export default function SearchScreen({ navigation, route }: Props) {
   };
 
   const sourceProfiles = useMemo(() => {
-    return search.profiles.filter(
+    if (activeSavedSearch) {
+      return search.profiles.filter(
+        p => !hasActiveDiscoveryRelationship(getInterestRelationship(p.id).status),
+      );
+    }
+    const map = new Map<string, Profile>();
+    for (const p of search.profiles) {
+      map.set(p.id, p);
+    }
+    for (const p of (allProfiles ?? [])) {
+      if (!map.has(p.id)) {
+        map.set(p.id, p);
+      }
+    }
+    return Array.from(map.values()).filter(
       p => !hasActiveDiscoveryRelationship(getInterestRelationship(p.id).status),
     );
-  }, [search.profiles, getInterestRelationship]);
+  }, [search.profiles, allProfiles, activeSavedSearch, getInterestRelationship]);
 
   const filteredProfiles = useMemo(() => {
     const myProfile = currentUser?.profile;
@@ -966,80 +982,82 @@ export default function SearchScreen({ navigation, route }: Props) {
     isBlockedByMe,
   ]);
 
-  const ListHeader = (
-    <View>
-      {/* ── Standard Search Header ─────────────────────────────────────── */}
-      <View style={[styles.header, { paddingTop: insets.top + 16 }]}>
-        <View style={styles.headerTitleRow}>
-          <View style={styles.titleCopy}>
-            <Text style={styles.headerEyebrow}>MYDEARPARTNER</Text>
-            <Text accessibilityRole="header" style={styles.headerTitle}>
-              Find your person
-            </Text>
-            <Text style={styles.headerDescription}>
-              Discover someone who feels like home.
-            </Text>
-          </View>
-          <View style={styles.headerEmblem}>
-            <Icon name="heart" size={25} color="#FF2D78" />
-          </View>
+  const SearchHeader = (
+    <View style={[styles.header, { paddingTop: insets.top + 16 }]}>
+      <View style={styles.headerTitleRow}>
+        <View style={styles.titleCopy}>
+          <Text style={styles.headerEyebrow}>MYDEARPARTNER</Text>
+          <Text accessibilityRole="header" style={styles.headerTitle}>
+            Find your person
+          </Text>
+          <Text style={styles.headerDescription}>
+            Discover someone who feels like home.
+          </Text>
         </View>
-
-        {/* Simple Search input with animated focus ring */}
-        <View style={[styles.searchBox, isSearchFocused && styles.searchBoxFocused]}>
-          <View style={styles.searchRow}>
-            <Icon
-              name="search"
-              size={20}
-              color={isSearchFocused ? colors.action : '#94A3B8'}
-            />
-            <TextInput
-              style={styles.searchInput}
-              placeholder="Name, city or community"
-              placeholderTextColor="#94A3B8"
-              value={searchQuery}
-              onChangeText={setSearchQuery}
-              onFocus={() => setIsSearchFocused(true)}
-              onBlur={() => setIsSearchFocused(false)}
-              returnKeyType="search"
-              selectionColor={colors.primary}
-            />
-            {searchQuery.length > 0 && (
-              <TouchableOpacity
-                onPress={() => setSearchQuery('')}
-                hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-              >
-                <Icon name="close-circle" size={18} color="#CBD5E1" />
-              </TouchableOpacity>
-            )}
-            <View style={styles.searchDivider} />
-            <TouchableOpacity
-              style={styles.filterIconBtn}
-              accessibilityRole="button"
-              accessibilityLabel="Open search filters"
-              onPress={() => {
-                triggerHaptic('light');
-                setShowFiltersModal(true);
-              }}
-            >
-              <Icon name="options" size={22} color="#0F172A" />
-              {activeFiltersCount > 0 && (
-                <View style={styles.filterBadge}>
-                  <Text style={styles.filterBadgeText}>
-                    {activeFiltersCount}
-                  </Text>
-                </View>
-              )}
-            </TouchableOpacity>
-          </View>
+        <View style={styles.headerEmblem}>
+          <Icon name="heart" size={25} color="#FF2D78" />
         </View>
-        <SavedSearchControls accountId={currentUser?.id ?? ''} filters={savedFilters}
-          quickSuggestionActive={Boolean(selectedPrompt)} onApply={applySavedSearch}
-          onRemove={id => setActiveSavedSearch(saved => saved?.id === id ? null : saved)} />
       </View>
 
-      {/* ── Body ──────────────────────────────────────────────────────────── */}
-      <View style={styles.body}>
+      {/* Simple Search input with animated focus ring */}
+      <View style={[styles.searchBox, isSearchFocused && styles.searchBoxFocused]}>
+        <View style={styles.searchRow}>
+          <Icon
+            name="search"
+            size={20}
+            color={isSearchFocused ? colors.action : '#94A3B8'}
+          />
+          <TextInput
+            style={styles.searchInput}
+            placeholder="Name, city or community"
+            placeholderTextColor="#94A3B8"
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+            onFocus={() => setIsSearchFocused(true)}
+            onBlur={() => setIsSearchFocused(false)}
+            returnKeyType="search"
+            selectionColor={colors.primary}
+            autoCorrect={false}
+            autoCapitalize="none"
+            onSubmitEditing={() => Keyboard.dismiss()}
+          />
+          {searchQuery.length > 0 && (
+            <TouchableOpacity
+              onPress={() => setSearchQuery('')}
+              hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+            >
+              <Icon name="close-circle" size={18} color="#CBD5E1" />
+            </TouchableOpacity>
+          )}
+          <View style={styles.searchDivider} />
+          <TouchableOpacity
+            style={styles.filterIconBtn}
+            accessibilityRole="button"
+            accessibilityLabel="Open search filters"
+            onPress={() => {
+              triggerHaptic('light');
+              setShowFiltersModal(true);
+            }}
+          >
+            <Icon name="options" size={22} color="#0F172A" />
+            {activeFiltersCount > 0 && (
+              <View style={styles.filterBadge}>
+                <Text style={styles.filterBadgeText}>
+                  {activeFiltersCount}
+                </Text>
+              </View>
+            )}
+          </TouchableOpacity>
+        </View>
+      </View>
+      <SavedSearchControls accountId={currentUser?.id ?? ''} filters={savedFilters}
+        quickSuggestionActive={Boolean(selectedPrompt)} onApply={applySavedSearch}
+        onRemove={id => setActiveSavedSearch(saved => saved?.id === id ? null : saved)} />
+    </View>
+  );
+
+  const ListHeader = (
+    <View style={styles.body}>
         {/* Quick chips */}
         <ScrollView
           horizontal
@@ -1247,14 +1265,15 @@ export default function SearchScreen({ navigation, route }: Props) {
           </TouchableOpacity>
         </View>
       </View>
-    </View>
   );
 
   return (
     <ScreenContainer constrained={false} edges={['left', 'right']} style={styles.root} onLayout={measureGrid}>
       <StatusBar barStyle="dark-content" />
+      {SearchHeader}
       <FlatList
         key={`search-${columns}-col-grid`}
+        style={styles.flatList}
         data={filteredProfiles}
         onEndReached={search.loadMore}
         onEndReachedThreshold={0.5}
@@ -1288,8 +1307,8 @@ export default function SearchScreen({ navigation, route }: Props) {
         ]}
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
-        keyboardDismissMode="on-drag"
-        removeClippedSubviews={Platform.OS === 'android'}
+        keyboardDismissMode={Platform.OS === 'ios' ? 'on-drag' : 'none'}
+        removeClippedSubviews={false}
         maxToRenderPerBatch={8}
         updateCellsBatchingPeriod={50}
         initialNumToRender={6}
@@ -1488,6 +1507,7 @@ export default function SearchScreen({ navigation, route }: Props) {
 
 const styles = StyleSheet.create({
   root: { flex: 1, width: '100%', maxWidth: 1100, alignSelf: 'center', backgroundColor: colors.background },
+  flatList: { flex: 1, width: '100%' },
   listContent: { paddingBottom: 120 },
   columnWrapper: { gap: 12, paddingHorizontal: 14 },
 
@@ -1509,47 +1529,49 @@ const styles = StyleSheet.create({
     fontSize: 10,
     letterSpacing: 2,
     fontWeight: '700',
-    color: '#B05F7D',
+    color: '#A53760',
     marginBottom: 6,
   },
-  headerDescription: { fontSize: 12, color: '#8B7380', marginTop: 5 },
+  headerDescription: { fontSize: 13, color: '#7D5C70', marginTop: 4 },
   headerEmblem: {
     width: 48,
     height: 48,
-    borderRadius: 18,
-    backgroundColor: '#FFE8F0',
+    borderRadius: 20,
+    backgroundColor: '#FFF0F5',
+    borderWidth: 1,
+    borderColor: '#F3DCE6',
     alignItems: 'center',
     justifyContent: 'center',
   },
-  cardProfession: { fontSize: 11, color: '#8B7380', marginBottom: 12 },
+  cardProfession: { fontSize: 12, color: '#6F5668', marginBottom: 12, fontWeight: '500' },
   headerTitle: {
-    fontSize: 26,
+    fontSize: 27,
     fontWeight: '800',
-    color: '#302330',
-    letterSpacing: -0.8,
+    color: '#2E0D24',
+    letterSpacing: -0.6,
   },
 
   // Search box (solid white)
   searchBox: {
     marginHorizontal: 20,
-    borderRadius: 18,
+    borderRadius: 22,
     backgroundColor: '#FFFFFF',
     borderWidth: 1,
-    borderColor: colors.roseBorder,
+    borderColor: 'rgba(165, 55, 96, 0.16)',
+    shadowColor: '#4A122E',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.06,
+    shadowRadius: 10,
+    elevation: 3,
   },
   searchBoxFocused: {
     borderColor: colors.action,
-    shadowColor: colors.action,
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.18,
-    shadowRadius: 8,
-    elevation: 4,
   },
   searchRow: {
     minHeight: 54,
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 20,
+    paddingHorizontal: 18,
     paddingVertical: 6,
     gap: 12,
   },
@@ -1557,35 +1579,37 @@ const styles = StyleSheet.create({
     flex: 1,
     minHeight: 42,
     fontSize: 15,
-    color: '#0F172A',
+    color: '#2E0D24',
     fontWeight: '600',
     paddingVertical: 0,
   },
   searchDivider: {
     width: 1,
     height: 24,
-    backgroundColor: '#E2E8F0',
+    backgroundColor: '#F3DCE6',
     marginHorizontal: 4,
   },
   filterIconBtn: {
-    width: 48,
-    height: 48,
-    borderRadius: 12,
-    backgroundColor: colors.surfaceTint,
+    width: 44,
+    height: 44,
+    borderRadius: 14,
+    backgroundColor: '#FFF0F5',
+    borderWidth: 1,
+    borderColor: '#F3DCE6',
     alignItems: 'center',
     justifyContent: 'center',
   },
   filterBadge: {
     position: 'absolute',
-    top: 4,
-    right: 4,
-    backgroundColor: '#A53760',
+    top: 3,
+    right: 3,
+    backgroundColor: colors.action,
     width: 16,
     height: 16,
     borderRadius: 8,
     alignItems: 'center',
     justifyContent: 'center',
-    borderWidth: 1,
+    borderWidth: 1.5,
     borderColor: '#FFF',
   },
   filterBadgeText: { color: '#FFF', fontSize: 9, fontWeight: '900' },
@@ -1710,37 +1734,42 @@ const styles = StyleSheet.create({
     marginBottom: 14,
     paddingHorizontal: 2,
   },
-  resultsCount: { fontSize: 18, fontWeight: '900', color: '#0F172A' },
+  resultsCount: { fontSize: 18, fontWeight: '800', color: '#2E0D24' },
   resultsSub: {
     fontSize: 12,
-    color: '#64748B',
+    color: '#7D5C70',
     fontWeight: '600',
     marginTop: 1,
   },
   sortBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#FFF',
+    backgroundColor: '#FFF0F5',
     paddingHorizontal: 12,
     paddingVertical: 7,
     borderRadius: 14,
-    borderWidth: 0,
-    ...shadow.sm,
+    borderWidth: 1,
+    borderColor: '#F3DCE6',
   },
   sortBtnText: { fontSize: 12, fontWeight: '800', color: colors.primary },
 
   // Grid card
   cardOuter: {
     backgroundColor: '#FFFFFF',
-    borderRadius: 20,
+    borderRadius: 22,
     overflow: 'hidden',
     borderWidth: 1,
-    borderColor: colors.roseBorder,
+    borderColor: 'rgba(165, 55, 96, 0.12)',
+    shadowColor: '#4A122E',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.1,
+    shadowRadius: 12,
+    elevation: 4,
   },
   cardPhotoWrap: {
     width: '100%',
     aspectRatio: 4 / 5,
-    backgroundColor: '#F0E3E8',
+    backgroundColor: '#F9EAF0',
     position: 'relative',
   },
   cardPhoto: { width: '100%', height: '100%' },
@@ -1756,20 +1785,22 @@ const styles = StyleSheet.create({
   matchBadge: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(255,255,255,0.95)',
+    backgroundColor: 'rgba(58, 16, 48, 0.88)',
     paddingHorizontal: 7,
     paddingVertical: 5,
-    borderRadius: 10,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(233, 180, 76, 0.45)',
   },
-  matchBadgeText: { color: '#6B344A', fontSize: 11, fontWeight: '800' },
+  matchBadgeText: { color: '#FDE68A', fontSize: 11, fontWeight: '800' },
   kundaliBadge: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#FEF3C7',
+    backgroundColor: 'rgba(254, 243, 199, 0.95)',
     paddingHorizontal: 6,
     paddingVertical: 5,
-    borderRadius: 10,
-    borderWidth: 0.5,
+    borderRadius: 12,
+    borderWidth: 1,
     borderColor: '#F59E0B',
   },
   kundaliBadgeText: { color: '#B45309', fontSize: 10, fontWeight: '800' },
@@ -1777,13 +1808,15 @@ const styles = StyleSheet.create({
     width: 32,
     height: 32,
     borderRadius: 16,
-    backgroundColor: 'rgba(255,255,255,0.95)',
+    backgroundColor: 'rgba(255,255,255,0.92)',
     alignItems: 'center',
     justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.7)',
   },
   heartBtnActive: {
-    backgroundColor: 'rgba(255,255,255,0.95)',
-    borderColor: '#FFF',
+    backgroundColor: '#FFF0F5',
+    borderColor: colors.action,
   },
   cardPhotoBottom: {
     padding: 12,
@@ -1792,7 +1825,7 @@ const styles = StyleSheet.create({
     flexShrink: 1,
     fontSize: 16,
     fontWeight: '800',
-    color: '#302330',
+    color: '#2E0D24',
   },
   verifiedDot: {
     backgroundColor: '#3B82F6',

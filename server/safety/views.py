@@ -87,8 +87,14 @@ def account_deletion(request):
     return received(record)
 
 
+def child_safety_standards(request):
+    return render(request, 'safety/child_safety_standards.html')
+
+
 def policy_page(request, page):
-    if page not in ('privacy', 'terms', 'safety'):
+    if page in ('safety', 'child-safety', 'child-safety-standards'):
+        return render(request, 'safety/child_safety_standards.html')
+    if page not in ('privacy', 'terms'):
         raise Http404
     return render(request, 'safety/policy.html', {'policy': DOCUMENTS[page], 'version': POLICY_VERSION})
 

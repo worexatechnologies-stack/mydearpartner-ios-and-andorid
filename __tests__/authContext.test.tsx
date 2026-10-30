@@ -2,6 +2,7 @@ import React from 'react';
 import { act, create, ReactTestRenderer } from 'react-test-renderer';
 import { AuthProvider, useAuth } from '../src/context/AuthContext';
 import { getMyProfile, updateMyProfile } from '../src/api/profileService';
+import * as AuthService from '../src/api/authService';
 import { loadTokens } from '../src/utils/keychain';
 jest.mock('../src/utils/keychain', () => ({
   loadTokens: jest.fn(),
@@ -18,6 +19,8 @@ jest.mock('../src/api/profileService', () => ({
 }));
 jest.mock('../src/api/authService', () => ({
   login: jest.fn(),
+  verifyLoginOtp: jest.fn(),
+  resendLoginOtp: jest.fn(),
   logout: jest.fn().mockResolvedValue(undefined),
   register: jest.fn().mockResolvedValue({ user: { id: 'new-user' } }),
 }));
@@ -84,6 +87,21 @@ test('failed profile setup remains incomplete and exposes save failure', async (
     ).rejects.toThrow('offline');
   });
   expect(auth.currentUser?.profileComplete).toBe(false);
+});
+test.each(['male', 'female'])('signup forwards selected %s gender in the register request', async gender => {
+  await mount();
+  await act(async () => {
+    await auth.signup('test@example.com', 'password', {
+      date_of_birth: '1990-01-01',
+      policy_version: '2026-09-28',
+      gender,
+      profile_created_by: 'Friend',
+    });
+  });
+  expect(AuthService.register).toHaveBeenCalledWith(
+    expect.objectContaining({ email: 'test@example.com', gender, profile_created_by: 'Friend' }),
+    expect.any(Function),
+  );
 });
 test('restoring an incomplete profile still routes to setup', async () => {
   (loadTokens as jest.Mock).mockResolvedValue({ accessToken: 'test' });
@@ -220,4 +238,66 @@ test('profile refresh and edits recompute completion and membership together', a
   (updateMyProfile as jest.Mock).mockResolvedValue({ ...profile, city: '', isPremium: false, currentPlanSlug: 'free' });
   await act(async () => { await auth.updateProfile({ city: '' }); });
   expect(auth.currentUser).toMatchObject({ profileComplete: false, isPremium: false, planSlug: 'free' });
+});
+
+test('password challenge keeps the user signed out until OTP succeeds', async () => {
+  const service = require('../src/api/authService');
+  const challenge = { requires_otp: true, challenge_id: 'first', phone_masked: '******3210' };
+  service.login.mockResolvedValue(challenge);
+  service.verifyLoginOtp.mockResolvedValue({ user: { id: 'member' } });
+  (getMyProfile as jest.Mock).mockResolvedValue({ id: 'profile', name: 'Member', age: 26, city: 'Chennai', gender: 'female' });
+  await mount();
+  await act(async () => { expect(await auth.login('member', 'password')).toEqual({ ok: false, challenge }); });
+  expect(auth.currentUser).toBeNull();
+  expect(getMyProfile).not.toHaveBeenCalled();
+  await act(async () => { expect(await auth.verifyLoginOtp('123456')).toEqual({ ok: true }); });
+  expect(service.verifyLoginOtp).toHaveBeenCalledWith({ challenge_id: 'first', otp: '123456' }, expect.any(Function));
+  expect(auth.currentUser?.id).toBe('member');
+});
+
+test('resending replaces the challenge and cancelling blocks verification', async () => {
+  const service = require('../src/api/authService');
+  service.login.mockResolvedValue({ requires_otp: true, challenge_id: 'first' });
+  service.resendLoginOtp.mockResolvedValue({ requires_otp: true, challenge_id: 'second' });
+  service.verifyLoginOtp.mockResolvedValue({ user: { id: 'member' } });
+  (getMyProfile as jest.Mock).mockResolvedValue({ id: 'profile' });
+  await mount();
+  await act(async () => { await auth.login('member', 'password'); await auth.resendLoginOtp(); });
+  await act(async () => { await auth.verifyLoginOtp('123456'); });
+  expect(service.verifyLoginOtp).toHaveBeenCalledWith({ challenge_id: 'second', otp: '123456' }, expect.any(Function));
+  await act(async () => { await auth.login('member', 'password'); auth.cancelLogin(); });
+  service.verifyLoginOtp.mockClear();
+  await expect(auth.verifyLoginOtp('123456')).resolves.toMatchObject({ ok: false });
+  expect(service.verifyLoginOtp).not.toHaveBeenCalled();
+});
+
+test('current backend challenges verify against the returned phone and resend through password login', async () => {
+  const service = require('../src/api/authService');
+  const challenge = { requires_otp: true, requires_two_factor: true, mobile_number: '9876543210', phone_masked: '******3210' };
+  service.login.mockResolvedValue(challenge);
+  service.verifyLoginOtp.mockResolvedValue({ user: { id: 'member' } });
+  (getMyProfile as jest.Mock).mockResolvedValue({ id: 'profile', name: 'Member', age: 26, city: 'Chennai', gender: 'female' });
+  await mount();
+  await act(async () => { expect(await auth.login('member@example.com', 'password')).toEqual({ ok: false, challenge }); });
+  expect(auth.currentUser).toBeNull();
+  expect(getMyProfile).not.toHaveBeenCalled();
+  await act(async () => { expect(await auth.resendLoginOtp()).toEqual(challenge); });
+  expect(service.login).toHaveBeenCalledTimes(2);
+  expect(service.login).toHaveBeenLastCalledWith({ email: 'member@example.com', password: 'password' }, expect.any(Function));
+  expect(service.resendLoginOtp).not.toHaveBeenCalled();
+  await act(async () => { expect(await auth.verifyLoginOtp('123456')).toEqual({ ok: true }); });
+  expect(service.verifyLoginOtp).toHaveBeenCalledWith({ mobile_number: '9876543210', otp: '123456' }, expect.any(Function));
+  expect(auth.currentUser?.id).toBe('member');
+  await expect(auth.resendLoginOtp()).rejects.toThrow('password again');
+});
+
+test('cancelling a TWO_FACTOR attempt prevents verification and resend', async () => {
+  const service = require('../src/api/authService');
+  service.login.mockResolvedValue({ requires_otp: true, requires_two_factor: true, mobile_number: '9876543210' });
+  await mount();
+  await act(async () => { await auth.login('member@example.com', 'password'); auth.cancelLogin(); });
+  await expect(auth.verifyLoginOtp('123456')).resolves.toMatchObject({ ok: false });
+  await expect(auth.resendLoginOtp()).rejects.toThrow('password again');
+  expect(service.verifyLoginOtp).not.toHaveBeenCalled();
+  expect(service.login).toHaveBeenCalledTimes(1);
 });

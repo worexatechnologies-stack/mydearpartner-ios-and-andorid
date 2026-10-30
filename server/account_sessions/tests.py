@@ -9,6 +9,8 @@ from .services import issue_session_tokens, dispatch_notice
 
 class SingleSessionTests(TestCase):
     def setUp(self):
+        from django.core.cache import cache
+        cache.clear()
         self.user = get_user_model().objects.create_user(username='member', password='test-password-123')
         self.client = APIClient()
 
@@ -49,8 +51,18 @@ class SingleSessionTests(TestCase):
         self.assertEqual(response.status_code, 401)
         self.assertEqual(self.status(old).status_code, 200)
 
-    def test_login_response_includes_session_claim_and_user(self):
-        response = self.client.post('/api/v1/auth/login/', {'identifier': 'member', 'password': 'test-password-123'})
+    def test_login_response_requires_otp_before_session_claim_and_user(self):
+        from .models import UserPhone
+        UserPhone.objects.create(user=self.user, phone_number='9876543210')
+        with patch('account_sessions.views.send_sms_otp', return_value=True) as send:
+            response = self.client.post('/api/v1/auth/login/', {'identifier': 'member', 'password': 'test-password-123'})
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.data['requires_otp'])
+        self.assertNotIn('access', response.data)
+        self.assertFalse(AccountSession.objects.filter(user=self.user).exists())
+        response = self.client.post('/api/v1/auth/login/verify/', {
+            'challenge_id': response.data['challenge_id'], 'otp': send.call_args.args[1],
+        })
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data['user']['id'], str(self.user.pk))
         self.assertIn('mdp_sid', RefreshToken(response.data['refresh']))

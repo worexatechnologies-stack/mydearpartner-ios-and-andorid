@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 
-import { useNavigation } from '@react-navigation/native';
+import { RouteProp, useNavigation, useRoute } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import {
   Alert,
@@ -19,6 +19,7 @@ import {
 import LinearGradient from 'react-native-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Icon from 'react-native-vector-icons/Ionicons';
+import { LoginChallengeResponse } from '../../api/authService';
 import { useAuth } from '../../context/AuthContext';
 import { AuthStackParamList } from '../../navigation/types';
 import { colors, spacing } from '../../theme/theme';
@@ -31,13 +32,24 @@ import {
 export default function LoginScreen() {
   const navigation =
     useNavigation<NativeStackNavigationProp<AuthStackParamList>>();
+  const route = useRoute<RouteProp<AuthStackParamList, 'Login'>>();
   const insets = useSafeAreaInsets();
   const { width, height } = useWindowDimensions();
-  const { login } = useAuth();
+  const { login, verifyLoginOtp, resendLoginOtp, cancelLogin } = useAuth();
 
+  const [challenge, setChallenge] = useState<LoginChallengeResponse | null>(route.params?.challenge ?? null);
+  const [otp, setOtp] = useState('');
+  const [resendSeconds, setResendSeconds] = useState(0);
   const submitting = useRef(false);
+
+  useEffect(() => () => cancelLogin(), [cancelLogin]);
+  useEffect(() => {
+    if (!resendSeconds) return;
+    const timer = setTimeout(() => setResendSeconds(value => Math.max(0, value - 1)), 1000);
+    return () => clearTimeout(timer);
+  }, [resendSeconds]);
   const passwordInputRef = useRef<any>(null);
-  const [email, setEmail] = useState('');
+  const [email, setEmail] = useState(route.params?.email ?? '');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [saveCredentials, setSaveCredentials] = useState(true);
@@ -58,22 +70,37 @@ export default function LoginScreen() {
     };
   }, []);
 
+  useEffect(() => {
+    if (route.params?.email) setEmail(route.params.email);
+    if (route.params?.challenge) {
+      setChallenge(route.params.challenge);
+      setOtp('');
+      setResendSeconds(60);
+    }
+  }, [route.params?.challenge, route.params?.email]);
+
   const handleLogin = async () => {
     if (submitting.current) return;
-    if (!email.trim() || !password) {
-      Alert.alert('Error', 'Please enter your email and password.');
+    if (challenge ? !/^\d{6}$/.test(otp) : (!email.trim() || !password)) {
+      Alert.alert('Error', challenge ? 'Please enter the 6-digit verification code.' : 'Please enter your ID, email or mobile number and password.');
       return;
     }
     submitting.current = true;
     setIsLoading(true);
     try {
-      const result = await login(email.trim(), password);
+      const result = challenge
+        ? await verifyLoginOtp(otp)
+        : await login(email.trim(), password);
       if (result.ok) {
         if (saveCredentials) {
           await saveSavedCredentials(email.trim(), password);
         } else {
           await clearSavedCredentials();
         }
+      } else if (result.challenge) {
+        setChallenge(result.challenge);
+        setOtp('');
+        setResendSeconds(60);
       } else {
         Alert.alert('Login Failed', result.error || 'Invalid credentials');
       }
@@ -83,6 +110,30 @@ export default function LoginScreen() {
       submitting.current = false;
       setIsLoading(false);
     }
+  };
+
+  const handleResend = async () => {
+    if (submitting.current || resendSeconds > 0) return;
+    submitting.current = true;
+    setIsLoading(true);
+    try {
+      const nextChallenge = await resendLoginOtp();
+      setChallenge(nextChallenge);
+      setOtp('');
+      setResendSeconds(60);
+    } catch (error: any) {
+      Alert.alert('Could not resend code', error?.message || 'Please try again.');
+    } finally {
+      submitting.current = false;
+      setIsLoading(false);
+    }
+  };
+
+  const handleChangeAccount = () => {
+    cancelLogin();
+    setChallenge(null);
+    setOtp('');
+    setResendSeconds(0);
   };
 
   return (
@@ -197,115 +248,154 @@ export default function LoginScreen() {
                 { paddingBottom: insets.bottom + spacing.xl },
               ]}
             >
-              {/* Email Input */}
-              <View style={styles.inputContainer}>
-                <Icon
-                  name="mail-outline"
-                  size={20}
-                  color="rgba(255,255,255,0.5)"
-                  style={styles.inputIcon}
-                />
-                <TextInput
-                  style={styles.input}
-                  placeholder="Email or Mobile Number"
-                  placeholderTextColor="rgba(255,255,255,0.3)"
-                  value={email}
-                  onChangeText={setEmail}
-                  autoCapitalize="none"
-                  keyboardType="email-address"
-                  autoCorrect={false}
-                  textContentType="username"
-                  autoComplete="username"
-                  importantForAutofill="yes"
-                  returnKeyType="next"
-                  onSubmitEditing={() => passwordInputRef.current?.focus()}
-                  accessibilityLabel="Email or mobile number"
-                  editable={!isLoading}
-                />
-              </View>
-
-              {/* Password Input */}
-              <View style={styles.inputContainer}>
-                <Icon
-                  name="lock-closed-outline"
-                  size={20}
-                  color="rgba(255,255,255,0.5)"
-                  style={styles.inputIcon}
-                />
-                <TextInput
-                  ref={passwordInputRef}
-                  style={styles.input}
-                  placeholder="Password"
-                  placeholderTextColor="rgba(255,255,255,0.3)"
-                  value={password}
-                  onChangeText={setPassword}
-                  secureTextEntry={!showPassword}
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                  textContentType="password"
-                  autoComplete="current-password"
-                  importantForAutofill="yes"
-                  returnKeyType="go"
-                  onSubmitEditing={handleLogin}
-                  accessibilityLabel="Password"
-                  editable={!isLoading}
-                />
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityLabel={
-                    showPassword ? 'Hide password' : 'Show password'
-                  }
-                  hitSlop={8}
-                  onPress={() => setShowPassword(!showPassword)}
-                  style={styles.eyeBtn}
-                >
-                  <Icon
-                    name={showPassword ? 'eye-outline' : 'eye-off-outline'}
-                    size={20}
-                    color="rgba(255,255,255,0.5)"
-                  />
-                </Pressable>
-              </View>
-
-              {hasLoadedSaved && (
-                <View style={styles.savedChip}>
-                  <Icon name="shield-checkmark" size={14} color="#10B981" />
-                  <Text style={styles.savedChipText}>
-                    Autofill ready from {Platform.OS === 'ios' ? 'iCloud Keychain' : 'Google Password Saver'}
+              {challenge && (
+                <View>
+                  <Text style={styles.primaryBtnText}>Verify your mobile number</Text>
+                  <Text style={[styles.subtitle, { marginBottom: spacing.md }]}>
+                    Enter the 6-digit code sent to {challenge.phone_masked || 'your registered mobile number'}.
                   </Text>
+                  <View style={styles.inputContainer}>
+                    <Icon name="shield-checkmark-outline" size={20} color="#FFFFFF" style={styles.inputIcon} />
+                    <TextInput
+                      style={styles.input}
+                      value={otp}
+                      onChangeText={value => setOtp(value.replace(/\D/g, '').slice(0, 6))}
+                      placeholder="6-digit OTP"
+                      placeholderTextColor="rgba(255,255,255,0.3)"
+                      keyboardType="number-pad"
+                      textContentType="oneTimeCode"
+                      autoComplete="sms-otp"
+                      maxLength={6}
+                      autoFocus
+                      accessibilityLabel="Verification code"
+                      editable={!isLoading}
+                      onSubmitEditing={handleLogin}
+                    />
+                  </View>
+                  <View style={styles.authOptionsRow}>
+                    <Pressable accessibilityRole="button" accessibilityLabel="Resend OTP" onPress={handleResend} disabled={isLoading || resendSeconds > 0}>
+                      <Text style={styles.forgotText}>{resendSeconds > 0 ? `Resend in ${resendSeconds}s` : 'Resend code'}</Text>
+                    </Pressable>
+                    <Pressable accessibilityRole="button" onPress={handleChangeAccount} disabled={isLoading}>
+                      <Text style={styles.forgotText}>Change account</Text>
+                    </Pressable>
+                  </View>
                 </View>
               )}
+              {!challenge && (
+                <>
+                  {/* ID Input */}
+                  <View style={styles.inputContainer}>
+                    <Icon
+                      name="mail-outline"
+                      size={20}
+                      color="rgba(255,255,255,0.5)"
+                      style={styles.inputIcon}
+                    />
+                    <TextInput
+                      style={styles.input}
+                      placeholder="Member ID, Email or Mobile Number"
+                      placeholderTextColor="rgba(255,255,255,0.3)"
+                      value={email}
+                      onChangeText={setEmail}
+                      autoCapitalize="none"
+                      keyboardType="default"
+                      autoCorrect={false}
+                      textContentType="username"
+                      autoComplete="username"
+                      importantForAutofill="yes"
+                      returnKeyType="next"
+                      onSubmitEditing={() => passwordInputRef.current?.focus()}
+                      accessibilityLabel="Member ID, email or mobile number"
+                      editable={!isLoading}
+                    />
+                  </View>
 
-              <View style={styles.authOptionsRow}>
-                <Pressable
-                  accessibilityRole="checkbox"
-                  accessibilityState={{ checked: saveCredentials }}
-                  accessibilityLabel="Save credentials with Google Password Manager and Apple Keychain"
-                  onPress={() => setSaveCredentials(!saveCredentials)}
-                  style={styles.saveCredentialsBtn}
-                >
-                  <Icon
-                    name={saveCredentials ? 'checkbox' : 'square-outline'}
-                    size={18}
-                    color={saveCredentials ? '#FF1E66' : 'rgba(255,255,255,0.5)'}
-                  />
-                  <Text style={styles.saveCredentialsText}>
-                    Save with {Platform.OS === 'ios' ? 'iCloud Keychain' : 'Google Saver'}
-                  </Text>
-                </Pressable>
+                  {/* Password Input */}
+                  <View style={styles.inputContainer}>
+                    <Icon
+                      name="lock-closed-outline"
+                      size={20}
+                      color="rgba(255,255,255,0.5)"
+                      style={styles.inputIcon}
+                    />
+                    <TextInput
+                      ref={passwordInputRef}
+                      style={styles.input}
+                      placeholder="Password"
+                      placeholderTextColor="rgba(255,255,255,0.3)"
+                      value={password}
+                      onChangeText={setPassword}
+                      secureTextEntry={!showPassword}
+                      autoCapitalize="none"
+                      autoCorrect={false}
+                      textContentType="password"
+                      autoComplete="current-password"
+                      importantForAutofill="yes"
+                      returnKeyType="go"
+                      onSubmitEditing={handleLogin}
+                      accessibilityLabel="Password"
+                      editable={!isLoading}
+                    />
+                    <Pressable
+                      accessibilityRole="button"
+                      accessibilityLabel={
+                        showPassword ? 'Hide password' : 'Show password'
+                      }
+                      hitSlop={8}
+                      onPress={() => setShowPassword(!showPassword)}
+                      style={styles.eyeBtn}
+                    >
+                      <Icon
+                        name={showPassword ? 'eye-outline' : 'eye-off-outline'}
+                        size={20}
+                        color="rgba(255,255,255,0.5)"
+                      />
+                    </Pressable>
+                  </View>
 
-                <Pressable
-                  onPress={() => navigation.navigate('ForgotPassword')}
-                  style={styles.forgotBtn}
-                >
-                  <Text style={styles.forgotText}>Forgot password?</Text>
-                </Pressable>
-              </View>
+                  {hasLoadedSaved && (
+                    <View style={styles.savedChip}>
+                      <Icon name="shield-checkmark" size={14} color="#10B981" />
+                      <Text style={styles.savedChipText}>
+                        Autofill ready from {Platform.OS === 'ios' ? 'iCloud Keychain' : 'Google Password Saver'}
+                      </Text>
+                    </View>
+                  )}
+
+                  <View style={styles.authOptionsRow}>
+                    <Pressable
+                      accessibilityRole="checkbox"
+                      accessibilityState={{ checked: saveCredentials }}
+                      accessibilityLabel="Save credentials with Google Password Manager and Apple Keychain"
+                      onPress={() => setSaveCredentials(!saveCredentials)}
+                      style={styles.saveCredentialsBtn}
+                    >
+                      <Icon
+                        name={saveCredentials ? 'checkbox' : 'square-outline'}
+                        size={18}
+                        color={saveCredentials ? '#FF1E66' : 'rgba(255,255,255,0.5)'}
+                      />
+                      <Text style={styles.saveCredentialsText}>
+                        Save with {Platform.OS === 'ios' ? 'iCloud Keychain' : 'Google Saver'}
+                      </Text>
+                    </Pressable>
+
+                    <Pressable
+                      onPress={() => navigation.navigate('ForgotPassword')}
+                      style={styles.forgotBtn}
+                    >
+                      <Text style={styles.forgotText}>Forgot password?</Text>
+                    </Pressable>
+                  </View>
+
+                </>
+              )}
 
               {/* Glowing Sign In Button */}
               <Pressable
                 accessibilityRole="button"
-                accessibilityLabel="Sign in"
+                accessibilityLabel={challenge ? 'Verify OTP and sign in' : 'Sign In'}
                 accessibilityState={{ busy: isLoading, disabled: isLoading }}
                 onPress={handleLogin}
                 disabled={isLoading}
@@ -328,7 +418,7 @@ export default function LoginScreen() {
                     style={{ marginRight: 8 }}
                   />
                   <Text style={styles.primaryBtnText}>
-                    {isLoading ? 'Signing In...' : 'Sign In'}
+                    {isLoading ? (challenge ? 'Verifying...' : 'Signing in...') : (challenge ? 'Verify OTP & Sign In' : 'Sign In')}
                   </Text>
                 </LinearGradient>
               </Pressable>
